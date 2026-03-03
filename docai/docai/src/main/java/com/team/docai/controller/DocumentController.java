@@ -5,8 +5,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.team.docai.common.Result;
 import com.team.docai.entity.Document;
 import com.team.docai.mapper.DocumentMapper;
+import com.team.docai.service.AIService;
 import com.team.docai.service.DocParseService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -17,8 +19,9 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
-import java.util.UUID;
+import java.util.*;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/documents")
 @RequiredArgsConstructor
@@ -26,58 +29,64 @@ public class DocumentController {
 
     private final DocumentMapper documentMapper;
     private final DocParseService docParseService;
+    private final AIService aiService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
 
-    /** 上传文档 */
+    private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(".docx", ".xlsx", ".txt", ".md");
+
+    /** 上传单个文档 */
     @PostMapping("/upload")
-    public Result<?> upload(@RequestParam("file") MultipartFile file) throws IOException {
-        // 创建上传目录
-        Path dir = Paths.get(uploadDir);
-        if (!Files.exists(dir)) Files.createDirectories(dir);
-
-        // 保存文件
-        String originalName = file.getOriginalFilename();
-        if (originalName == null || !originalName.contains(".")) {
-            return Result.error("文件名无效");
+    public Result<?> upload(@RequestParam("file") MultipartFile file) {
+        try {
+            Document doc = processUpload(file);
+            return Result.success(doc);
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        } catch (Exception e) {
+            log.error("上传文件失败", e);
+            return Result.error("上传失败: " + e.getMessage());
         }
-        String ext = originalName.substring(originalName.lastIndexOf("."));
-        String savedName = UUID.randomUUID() + ext;
-        Path filePath = dir.resolve(savedName);
-        file.transferTo(filePath.toFile());
+    }
 
-        // 解析文本内容
-        String contentText = "";
-        if (ext.equals(".docx")) {
-            contentText = docParseService.parseWord(file);
-        } else if (ext.equals(".xlsx")) {
-            contentText = docParseService.parseExcel(file);
-        } else if (ext.equals(".txt")) {
-            contentText = new String(file.getBytes(), "UTF-8");
+    /** 批量上传文档 */
+    @PostMapping("/upload/batch")
+    public Result<?> batchUpload(@RequestParam("files") List<MultipartFile> files) {
+        List<Document> uploaded = new ArrayList<>();
+        List<String> errors = new ArrayList<>();
+
+        for (MultipartFile file : files) {
+            try {
+                Document doc = processUpload(file);
+                uploaded.add(doc);
+            } catch (Exception e) {
+                String msg = file.getOriginalFilename() + ": " + e.getMessage();
+                errors.add(msg);
+                log.error("批量上传-单文件失败: {}", msg);
+            }
         }
 
-        // 保存到数据库
-        Document doc = new Document();
-        doc.setUserId(1L); // Demo阶段写死用户ID
-        doc.setTitle(originalName);
-        doc.setFileType(ext.replace(".", ""));
-        doc.setFilePath(savedName);
-        doc.setFileSize(file.getSize());
-        doc.setContentText(contentText);
-        documentMapper.insert(doc);
-
-        return Result.success(doc);
+        Map<String, Object> result = new HashMap<>();
+        result.put("uploaded", uploaded);
+        result.put("successCount", uploaded.size());
+        result.put("failCount", errors.size());
+        result.put("errors", errors);
+        return Result.success(result);
     }
 
     /** 文档列表 */
     @GetMapping
     public Result<?> list(@RequestParam(defaultValue = "1") int page,
-                          @RequestParam(defaultValue = "10") int size,
-                          @RequestParam(required = false) String keyword) {
+                          @RequestParam(defaultValue = "20") int size,
+                          @RequestParam(required = false) String keyword,
+                          @RequestParam(required = false) String fileType) {
         LambdaQueryWrapper<Document> wrapper = new LambdaQueryWrapper<>();
         if (keyword != null && !keyword.isEmpty()) {
             wrapper.like(Document::getTitle, keyword);
+        }
+        if (fileType != null && !fileType.isEmpty()) {
+            wrapper.eq(Document::getFileType, fileType);
         }
         wrapper.orderByDesc(Document::getCreatedAt);
         return Result.success(documentMapper.selectPage(new Page<>(page, size), wrapper));
@@ -86,17 +95,43 @@ public class DocumentController {
     /** 获取文档详情 */
     @GetMapping("/{id}")
     public Result<?> detail(@PathVariable Long id) {
-        return Result.success(documentMapper.selectById(id));
+        Document doc = documentMapper.selectById(id);
+        if (doc == null) return Result.error("文档不存在");
+        return Result.success(doc);
+    }
+
+    /** 获取文档提取的信息摘要 */
+    @GetMapping("/{id}/summary")
+    public Result<?> summary(@PathVariable Long id) {
+        Document doc = documentMapper.selectById(id);
+        if (doc == null) return Result.error("文档不存在");
+        if (doc.getContentText() == null || doc.getContentText().isBlank()) {
+            return Result.error("文档内容为空，无法生成摘要");
+        }
+        try {
+            String keyInfo = aiService.extractKeyInfo(doc.getContentText());
+            return Result.success(Map.of("summary", keyInfo, "title", doc.getTitle()));
+        } catch (Exception e) {
+            log.error("提取文档摘要失败", e);
+            return Result.error("摘要生成失败: " + e.getMessage());
+        }
     }
 
     /** 下载文档 */
     @GetMapping("/{id}/download")
     public ResponseEntity<Resource> download(@PathVariable Long id) {
         Document doc = documentMapper.selectById(id);
+        if (doc == null) {
+            return ResponseEntity.notFound().build();
+        }
         File file = new File(uploadDir + doc.getFilePath());
+        if (!file.exists()) {
+            return ResponseEntity.notFound().build();
+        }
         FileSystemResource resource = new FileSystemResource(file);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + doc.getTitle() + "\"")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(resource);
     }
 
@@ -105,9 +140,91 @@ public class DocumentController {
     public Result<?> delete(@PathVariable Long id) {
         Document doc = documentMapper.selectById(id);
         if (doc != null) {
-            new File(uploadDir + doc.getFilePath()).delete();
+            try {
+                new File(uploadDir + doc.getFilePath()).delete();
+            } catch (Exception e) {
+                log.warn("删除文件失败: {}", e.getMessage());
+            }
             documentMapper.deleteById(id);
         }
         return Result.success("删除成功");
+    }
+
+    /** 批量删除文档 */
+    @DeleteMapping("/batch")
+    public Result<?> batchDelete(@RequestBody List<Long> ids) {
+        int deleted = 0;
+        for (Long id : ids) {
+            Document doc = documentMapper.selectById(id);
+            if (doc != null) {
+                try {
+                    new File(uploadDir + doc.getFilePath()).delete();
+                } catch (Exception e) {
+                    log.warn("删除文件失败: {}", e.getMessage());
+                }
+                documentMapper.deleteById(id);
+                deleted++;
+            }
+        }
+        return Result.success(Map.of("deleted", deleted));
+    }
+
+    /** 获取文档统计信息 */
+    @GetMapping("/stats")
+    public Result<?> stats() {
+        Long total = documentMapper.selectCount(null);
+        Long docxCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>().eq(Document::getFileType, "docx"));
+        Long xlsxCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>().eq(Document::getFileType, "xlsx"));
+        Long txtCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>().eq(Document::getFileType, "txt"));
+        Long mdCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>().eq(Document::getFileType, "md"));
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("total", total);
+        stats.put("docx", docxCount);
+        stats.put("xlsx", xlsxCount);
+        stats.put("txt", txtCount);
+        stats.put("md", mdCount);
+        return Result.success(stats);
+    }
+
+    // ============ 私有方法 ============
+
+    private Document processUpload(MultipartFile file) throws IOException {
+        Path dir = Paths.get(uploadDir);
+        if (!Files.exists(dir)) Files.createDirectories(dir);
+
+        String originalName = file.getOriginalFilename();
+        if (originalName == null || !originalName.contains(".")) {
+            throw new IllegalArgumentException("文件名无效");
+        }
+
+        String ext = originalName.substring(originalName.lastIndexOf(".")).toLowerCase();
+        if (!SUPPORTED_EXTENSIONS.contains(ext)) {
+            throw new IllegalArgumentException("不支持的文件格式: " + ext + "，仅支持: " + SUPPORTED_EXTENSIONS);
+        }
+
+        String savedName = UUID.randomUUID() + ext;
+        Path filePath = dir.resolve(savedName);
+        file.transferTo(filePath.toFile());
+
+        // 解析文档内容
+        String contentText = "";
+        try {
+            contentText = docParseService.parseDocument(file);
+        } catch (Exception e) {
+            log.warn("文档内容解析失败: {}, error={}", originalName, e.getMessage());
+        }
+
+        Document doc = new Document();
+        doc.setUserId(1L);
+        doc.setTitle(originalName);
+        doc.setFileType(ext.replace(".", ""));
+        doc.setFilePath(savedName);
+        doc.setFileSize(file.getSize());
+        doc.setContentText(contentText);
+        documentMapper.insert(doc);
+
+        log.info("文档上传成功: {}, type={}, size={}", originalName, ext, file.getSize());
+        return doc;
     }
 }
