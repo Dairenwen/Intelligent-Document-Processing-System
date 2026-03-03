@@ -1,0 +1,18 @@
+import axios from 'axios'
+import { ElMessage } from 'element-plus'
+
+const request = axios.create({
+  baseURL: '/api',
+  timeout: 60000  // AI调用可能比较慢，设60秒
+})
+
+// 响应拦截器
+request.interceptors.response.use(
+  response => response.data,
+  error => {
+    ElMessage.error(error.response?.data?.message || '请求失败')
+    return Promise.reject(error)
+  }
+)
+
+export default request
