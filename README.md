@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS documents (
 ### 2. 启动后端
 
 ```bash
-cd docai
+cd docai # 进入到有 pom.xml 的目录为止
 # 修改 src/main/resources/application.yml 中的数据库连接信息
 mvn spring-boot:run
 # 后端启动在 http://localhost:8080
