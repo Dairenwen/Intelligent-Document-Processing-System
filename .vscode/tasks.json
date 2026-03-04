@@ -1,0 +1,40 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run Backend",
+            "type": "shell",
+            "command": "${workspaceFolder}/docai/docai/mvnw.cmd",
+            "args": [
+                "spring-boot:run"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/docai/docai"
+            },
+            "problemMatcher": [
+                "$maven" 
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Run Backend (debug)",
+            "type": "shell",
+            "command": "${workspaceFolder}/docai/docai/mvnw.cmd",
+            "args": [
+                "-e",
+                "-X",
+                "spring-boot:run"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}/docai/docai"
+            },
+            "problemMatcher": [
+                "$maven"
+            ],
+            "group": "none"
+        }
+    ]
+}
