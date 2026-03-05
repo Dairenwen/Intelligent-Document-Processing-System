@@ -137,11 +137,13 @@ CREATE TABLE IF NOT EXISTS documents (
 ### 2. 启动后端
 
 ```bash
-cd docai # 进入到有 pom.xml 的目录为止
-# 修改 src/main/resources/application.yml 中的数据库连接信息
+cd docai/docai  # 进入到有 pom.xml 的目录
+# 修改 src/main/resources/application.yml 中的数据库连接信息（可选）
 mvn spring-boot:run
 # 后端启动在 http://localhost:8080
 ```
+
+**快速验证**：浏览器访问 `http://localhost:8080/api/documents`，返回 200 状态码表示正常
 
 ### 3. 启动前端
 
@@ -289,7 +291,7 @@ Intelligent-Document-Processing-System/
 
 ### 开发/演示环境（推荐）
 前后端联合开发：
-- 后端：`mvn spring-boot:run`（端口 8080）
+- 后端：在 VS Code 中打开任务（`Ctrl+Shift+P` → "Run Task" → "Run Backend"），或运行 `mvn spring-boot:run`（端口 8080）
 - 前端：`npm run dev`（端口 5173，自动代理）
 
 ### 生产环境

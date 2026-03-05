@@ -4,16 +4,15 @@
         {
             "label": "Run Backend",
             "type": "shell",
-            "command": "${workspaceFolder}/docai/docai/mvnw.cmd",
+            "command": "java",
             "args": [
-                "spring-boot:run"
+                "-jar",
+                "${workspaceFolder}/docai/docai/target/docai-0.0.1-SNAPSHOT.jar"
             ],
             "options": {
                 "cwd": "${workspaceFolder}/docai/docai"
             },
-            "problemMatcher": [
-                "$maven" 
-            ],
+            "problemMatcher": [],
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -22,7 +21,7 @@
         {
             "label": "Run Backend (debug)",
             "type": "shell",
-            "command": "${workspaceFolder}/docai/docai/mvnw.cmd",
+            "command": "mvn",
             "args": [
                 "-e",
                 "-X",
