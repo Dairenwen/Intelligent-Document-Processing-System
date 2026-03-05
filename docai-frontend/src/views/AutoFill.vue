@@ -82,11 +82,6 @@
               <el-icon :size="40" color="white"><MagicStick /></el-icon>
             </div>
           </div>
-          <div class="progress-info">
-            <el-progress :percentage="Math.min(fillProgress, 100)" :stroke-width="8" color="#4F46E5" />
-            <p class="progress-text">{{ progressText }}</p>
-            <p class="progress-detail">数据源: {{ extractedCount }} 个文档 | 模板: {{ templateFiles.length }} 个</p>
-          </div>
           <div class="progress-steps">
             <div class="p-step" :class="{ done: fillPhase >= 1, active: fillPhase === 0 }">
               <div class="p-dot"></div><span>读取数据库文档</span>
@@ -100,6 +95,10 @@
             <div class="p-step" :class="{ done: fillPhase >= 4, active: fillPhase === 3 }">
               <div class="p-dot"></div><span>填充模板</span>
             </div>
+          </div>
+          <div class="progress-info">
+            <el-progress :percentage="Math.min(fillProgress, 100)" :stroke-width="8" color="#4F46E5" :format="formatProgress" />
+            <p class="progress-detail">数据源: {{ extractedCount }} 个文档 | 模板: {{ templateFiles.length }} 个</p>
           </div>
         </div>
       </div>
@@ -179,6 +178,10 @@ const fillTimeDisplay = computed(() => {
   if (fillTimeMs.value < 1000) return fillTimeMs.value + 'ms'
   return (fillTimeMs.value / 1000).toFixed(1) + 's'
 })
+
+const formatProgress = (percentage) => {
+  return Math.round(percentage) + '%'
+}
 
 // Methods
 const loadStats = async () => {

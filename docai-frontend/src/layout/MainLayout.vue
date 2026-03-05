@@ -45,13 +45,13 @@
       </nav>
 
       <!-- 模块分隔 -->
-      <div v-if="!isCollapsed" class="sidebar-section-title">三大核心模块</div>
+      <!-- <div v-if="!isCollapsed" class="sidebar-section-title">三大核心模块</div>
       <nav class="sidebar-nav modules">
         <div v-for="mod in moduleInfo" :key="mod.id" class="module-tag" :class="mod.color">
           <div class="module-dot"></div>
           <span v-if="!isCollapsed">{{ mod.label }}</span>
         </div>
-      </nav>
+      </nav> -->
 
       <!-- 折叠按钮 -->
       <div class="sidebar-footer">

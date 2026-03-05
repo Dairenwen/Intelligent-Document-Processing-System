@@ -77,24 +77,7 @@
       </div>
     </div>
 
-    <!-- 快速操作 -->
-    <div class="section-title">
-      <h3>⚡ 快速操作</h3>
-    </div>
-    <div class="quick-actions">
-      <div class="action-card" @click="$router.push('/documents')">
-        <el-icon :size="28" color="#3B82F6"><UploadFilled /></el-icon>
-        <span>上传文档</span>
-      </div>
-      <div class="action-card" @click="$router.push('/autofill')">
-        <el-icon :size="28" color="#8B5CF6"><Grid /></el-icon>
-        <span>自动填表</span>
-      </div>
-      <div class="action-card" @click="$router.push('/ai-chat')">
-        <el-icon :size="28" color="#10B981"><ChatDotRound /></el-icon>
-        <span>AI对话</span>
-      </div>
-    </div>
+
   </div>
 </template>
 
@@ -386,35 +369,7 @@ onMounted(async () => {
   transform: translateX(4px);
 }
 
-/* Quick Actions */
-.quick-actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
 
-.action-card {
-  background: var(--bg-white);
-  border-radius: var(--radius-lg);
-  padding: 28px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  transition: all var(--transition-base);
-  border: 1px solid var(--border-light);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.action-card:hover {
-  border-color: var(--primary-light);
-  box-shadow: var(--shadow-md);
-  color: var(--primary);
-  transform: translateY(-2px);
-}
 
 /* Responsive */
 @media (max-width: 1200px) {
