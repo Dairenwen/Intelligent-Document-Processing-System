@@ -124,10 +124,47 @@ public class AIService {
         return chat(systemPrompt, text);
     }
 
-    /** AI分析文档 */
+    /**
+     * AI分析文档 - 支持问答、分析和编辑操作
+     * 使用文档原始文本作为上下文，根据用户指令智能判断操作类型
+     */
     public String analyzeDocument(String content, String question) {
-        String systemPrompt = "你是一个智能文档分析助手。以下是文档内容，请根据用户的问题进行分析回答。\n\n文档内容：\n" + content;
+        // 截断过长文本防止token溢出
+        String processedContent = content;
+        if (content != null && content.length() > 15000) {
+            processedContent = content.substring(0, 15000) + "\n...(文档内容较长，已截取前15000字)";
+        }
+        String systemPrompt = "你是一个智能文档处理助手，具备文档分析、编辑和信息提取能力。\n\n"
+                + "当前文档内容如下：\n---\n" + processedContent + "\n---\n\n"
+                + "请根据用户指令执行相应操作：\n"
+                + "1. 如果用户询问、分析、总结文档内容 → 直接给出简洁准确的回答\n"
+                + "2. 如果用户要求编辑、修改、润色、增删内容 → 返回编辑后的完整文本，用\"===编辑结果===\\n\"作为开头标记\n"
+                + "3. 如果用户要求提取数据或信息 → 以结构化格式（表格或列表）输出\n"
+                + "4. 如果用户要求调整格式或结构 → 返回格式调整后的完整文本，用\"===编辑结果===\\n\"作为开头标记\n\n"
+                + "注意：\n"
+                + "- 编辑操作时必须返回修改后的完整文本，不要省略未修改的部分\n"
+                + "- 回答要准确，所有数据必须来自文档原文\n"
+                + "- 不要编造文档中不存在的信息";
         return chat(systemPrompt, question);
+    }
+
+    /**
+     * AI编辑文档内容 - 根据用户指令对文档进行编辑操作
+     * 返回编辑后的完整文本
+     */
+    public String editDocumentContent(String content, String instruction) {
+        String processedContent = content;
+        if (content != null && content.length() > 15000) {
+            processedContent = content.substring(0, 15000) + "\n...(文档内容较长，已截取前15000字)";
+        }
+        String systemPrompt = "你是一个高精度文档编辑引擎。用户将提供一个编辑指令，请严格按照指令对文档内容进行修改。\n\n"
+                + "规则：\n"
+                + "1. 只修改指令要求修改的部分，保持其他内容不变\n"
+                + "2. 返回编辑后的完整文本，不要省略任何未修改的段落\n"
+                + "3. 不要添加说明或解释，直接输出编辑后的文档内容\n"
+                + "4. 保持原文档的格式风格（标点、换行、缩进等）\n\n"
+                + "原文档内容：\n---\n" + processedContent + "\n---";
+        return chat(systemPrompt, instruction);
     }
 
     /** AI分析Excel数据 */

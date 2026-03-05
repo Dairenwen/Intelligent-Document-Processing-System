@@ -32,6 +32,7 @@ public class DocumentController {
     private final DocumentMapper documentMapper;
     private final DocParseService docParseService;
     private final AIService aiService;
+    private final com.team.docai.service.FileParserService fileParserService;
 
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -178,6 +179,29 @@ public class DocumentController {
         return Result.success(Map.of("deleted", deleted));
     }
 
+    /** 更新文档内容（AI编辑后保存） */
+    @PutMapping("/{id}/content")
+    public Result<?> updateContent(@PathVariable Long id,
+                                   @RequestBody Map<String, String> body,
+                                   @RequestAttribute(value = "userId", required = false) Long userId) {
+        Document doc = documentMapper.selectById(id);
+        if (doc == null) return Result.error("文档不存在");
+        // 检查所有权
+        if (userId != null && !userId.equals(doc.getUserId())) {
+            return Result.error("无权修改此文档");
+        }
+        String newContent = body.get("content");
+        if (newContent == null || newContent.isBlank()) {
+            return Result.error("内容不能为空");
+        }
+        // 更新 rawText 为新内容，contentText 同步更新
+        doc.setRawText(newContent);
+        doc.setContentText(newContent);
+        documentMapper.updateById(doc);
+        log.info("文档内容已更新: id={}, title={}, contentLength={}", id, doc.getTitle(), newContent.length());
+        return Result.success("文档内容已保存");
+    }
+
     /** 获取文档统计信息 */
     @GetMapping("/stats")
     public Result<?> stats(@RequestAttribute(value = "userId", required = false) Long userId) {
@@ -225,38 +249,52 @@ public class DocumentController {
             throw new IllegalArgumentException("不支持的文件格式: " + ext + "，仅支持: " + SUPPORTED_EXTENSIONS);
         }
 
-        // 先解析文档原始文本（transferTo 会使 InputStream 失效，必须先解析）
+        // Step 1: 先读取文件字节（transferTo后InputStream不可用）
+        byte[] fileBytes = file.getBytes();
+
+        // Step 2: 保存文件到磁盘
+        String savedName = UUID.randomUUID() + ext;
+        Path filePath = dir.resolve(savedName);
+        Files.write(filePath, fileBytes);
+
+        // Step 3: 解析文档 —— 优先使用智谱AI文件解析API（同步/异步策略）
+        // 失败时自动回退到本地Apache POI解析
         String rawText = "";
         try {
-            rawText = docParseService.parseDocument(file);
+            rawText = fileParserService.parseFile(filePath.toFile(), originalName);
+            log.info("文件解析完成(云端/本地): {}, rawTextLength={}", originalName, rawText.length());
         } catch (Exception e) {
-            log.warn("文档内容解析失败: {}, error={}", originalName, e.getMessage());
+            log.warn("文件解析整体失败: {}, error={}", originalName, e.getMessage());
+            // 最终回退：尝试本地解析
+            try {
+                rawText = docParseService.parseLocalFile(filePath.toFile(), ext.replace(".", ""));
+            } catch (Exception e2) {
+                log.warn("本地解析也失败: {}", e2.getMessage());
+            }
         }
 
-        // 使用AI提取结构化信息（如果原始文本非空）
+        // Step 4: AI提取结构化关键信息（用于自动填表和检索）
         String contentText = rawText;
         if (rawText != null && !rawText.isBlank()) {
             try {
                 contentText = aiService.extractDocumentInfo(rawText, originalName);
-                log.info("AI信息提取完成: {}, 原文长度={}, 提取结果长度={}", originalName, rawText.length(), contentText.length());
+                log.info("AI信息提取完成: {}, 原文长度={}, 提取结果长度={}",
+                        originalName, rawText.length(), contentText.length());
             } catch (Exception e) {
                 log.warn("AI信息提取失败，保留原始文本: {}, error={}", originalName, e.getMessage());
                 contentText = rawText;
             }
         }
 
-        // 再保存文件到磁盘
-        String savedName = UUID.randomUUID() + ext;
-        Path filePath = dir.resolve(savedName);
-        file.transferTo(filePath.toFile());
-
+        // Step 5: 创建文档记录并入库
         Document doc = new Document();
         doc.setUserId(userId != null ? userId : 1L);
         doc.setTitle(originalName);
         doc.setFileType(ext.replace(".", ""));
         doc.setFilePath(savedName);
         doc.setFileSize(file.getSize());
-        doc.setContentText(contentText);
+        doc.setContentText(contentText);  // AI提取的结构化信息（供自动填表使用）
+        doc.setRawText(rawText);          // 完整的原始解析文本（供AI对话和编辑使用）
         documentMapper.insert(doc);
 
         log.info("文档上传成功: {}, type={}, size={}", originalName, ext, file.getSize());

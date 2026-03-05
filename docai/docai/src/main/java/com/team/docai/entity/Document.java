@@ -15,6 +15,7 @@ public class Document {
     private String filePath;
     private Long fileSize;
     private String contentText;
+    private String rawText;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
     @TableField(fill = FieldFill.INSERT_UPDATE)

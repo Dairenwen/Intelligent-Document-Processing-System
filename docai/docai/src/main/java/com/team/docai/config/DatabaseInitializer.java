@@ -67,6 +67,7 @@ public class DatabaseInitializer implements CommandLineRunner {
 
             safeAddColumn(stmt, "documents", "user_id", "BIGINT DEFAULT 1 COMMENT '用户ID' AFTER id");
             safeAddColumn(stmt, "documents", "content_text", "LONGTEXT COMMENT '解析后的文本内容' AFTER file_size");
+            safeAddColumn(stmt, "documents", "raw_text", "LONGTEXT COMMENT '文档原始解析文本' AFTER content_text");
 
             log.info("数据库表结构检查完成");
         } catch (Exception e) {

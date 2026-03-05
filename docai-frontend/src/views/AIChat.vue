@@ -170,6 +170,11 @@
                     <el-icon :size="14"><Document /></el-icon>
                   </button>
                 </el-tooltip>
+                <el-tooltip content="保存到文档" v-if="currentDoc">
+                  <button class="action-btn save-btn" @click="saveToDocument(msg.content)">
+                    <el-icon :size="14"><Upload /></el-icon>
+                  </button>
+                </el-tooltip>
               </div>
             </div>
           </template>
@@ -260,13 +265,13 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { aiChat, getDocument, getDocuments, downloadBlob } from '../api'
+import { aiChat, getDocument, getDocuments, downloadBlob, updateDocumentContent } from '../api'
 import request from '../api/request'
 import { ElMessage } from 'element-plus'
 import {
   Delete, Position, CopyDocument, Document, Download, Close, FolderOpened,
   DArrowLeft, DArrowRight, Link, Setting, Memo, Search, EditPen, SetUp,
-  DataAnalysis, Promotion
+  DataAnalysis, Promotion, Upload
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -510,6 +515,26 @@ const exportContentToWord = async (content) => {
   }
 }
 
+const saveToDocument = async (content) => {
+  if (!currentDocId.value || !currentDoc.value) {
+    ElMessage.warning('请先关联文档')
+    return
+  }
+  // 如果AI返回内容以"===编辑结果==="开头, 提取实际编辑内容
+  let contentToSave = content
+  if (contentToSave.startsWith('===编辑结果===')) {
+    contentToSave = contentToSave.replace(/^===编辑结果===\n?/, '')
+  }
+  try {
+    await updateDocumentContent(currentDocId.value, contentToSave)
+    ElMessage.success(`已保存到文档"${currentDoc.value.title}"`)
+    // 更新本地文档状态
+    currentDoc.value.contentText = contentToSave
+  } catch (e) {
+    ElMessage.error('保存失败: ' + (e.response?.data?.message || e.message || '未知错误'))
+  }
+}
+
 const clearChat = () => {
   messages.value = []
   lastAIContent.value = ''
@@ -610,6 +635,8 @@ const scrollToBottom = async () => {
 .message-bubble:hover .bubble-actions { opacity: 1; }
 .action-btn { background: none; border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 4px 8px; cursor: pointer; color: var(--text-muted); transition: all 0.2s; }
 .action-btn:hover { background: var(--bg-base); color: var(--primary); border-color: var(--primary); }
+.action-btn.save-btn { color: var(--primary); border-color: rgba(79, 70, 229, 0.3); }
+.action-btn.save-btn:hover { background: rgba(79, 70, 229, 0.1); color: var(--primary); border-color: var(--primary); }
 .loading-bubble { min-width: 60px; }
 .typing-dots { display: flex; gap: 4px; align-items: center; height: 20px; }
 .typing-dots span { width: 7px; height: 7px; background: var(--primary); border-radius: 50%; opacity: 0.4; animation: typingDot 1.4s infinite ease-in-out; }

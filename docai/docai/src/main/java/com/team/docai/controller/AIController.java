@@ -25,7 +25,7 @@ public class AIController {
     private final DocParseService docParseService;
     private final DocumentMapper documentMapper;
 
-    /** AI对话（可带文档上下文） */
+    /** AI对话（可带文档上下文） - 使用rawText提供完整文档内容 */
     @PostMapping("/chat")
     public Result<?> chat(@RequestBody Map<String, Object> body) {
         try {
@@ -41,7 +41,15 @@ public class AIController {
             if (documentId != null) {
                 Document doc = documentMapper.selectById(documentId);
                 if (doc == null) return Result.error("文档不存在");
-                response = aiService.analyzeDocument(doc.getContentText(), message);
+                // 优先使用 rawText（完整原始文本），若为空则回退到 contentText
+                String docContent = doc.getRawText();
+                if (docContent == null || docContent.isBlank()) {
+                    docContent = doc.getContentText();
+                }
+                if (docContent == null || docContent.isBlank()) {
+                    return Result.error("文档内容为空，请先确保文档已正确解析");
+                }
+                response = aiService.analyzeDocument(docContent, message);
             } else {
                 response = aiService.chat("你是一个智能公文处理助手，请帮助用户处理公文相关问题。请用简洁专业的语言回答。", message);
             }
@@ -49,6 +57,40 @@ public class AIController {
         } catch (Exception e) {
             log.error("AI对话失败", e);
             return Result.error("AI对话失败: " + e.getMessage());
+        }
+    }
+
+    /** AI编辑文档 - 根据指令对关联文档进行编辑并返回结果 */
+    @PostMapping("/edit-document")
+    public Result<?> editDocument(@RequestBody Map<String, Object> body) {
+        try {
+            Long documentId = body.get("documentId") != null ?
+                    Long.valueOf(body.get("documentId").toString()) : null;
+            String instruction = (String) body.get("instruction");
+            if (documentId == null) return Result.error("请指定文档ID");
+            if (instruction == null || instruction.isBlank()) return Result.error("请输入编辑指令");
+
+            Document doc = documentMapper.selectById(documentId);
+            if (doc == null) return Result.error("文档不存在");
+
+            String docContent = doc.getRawText();
+            if (docContent == null || docContent.isBlank()) {
+                docContent = doc.getContentText();
+            }
+            if (docContent == null || docContent.isBlank()) {
+                return Result.error("文档内容为空");
+            }
+
+            String editedContent = aiService.editDocumentContent(docContent, instruction);
+            return Result.success(Map.of(
+                    "editedContent", editedContent,
+                    "originalLength", docContent.length(),
+                    "editedLength", editedContent.length(),
+                    "title", doc.getTitle()
+            ));
+        } catch (Exception e) {
+            log.error("AI编辑文档失败", e);
+            return Result.error("编辑失败: " + e.getMessage());
         }
     }
 
@@ -121,7 +163,7 @@ public class AIController {
         }
     }
 
-    /** AI提取文档关键信息 */
+    /** AI提取文档关键信息 - 优先使用rawText */
     @PostMapping("/extract-info")
     public Result<?> extractInfo(@RequestBody Map<String, Object> body) {
         try {
@@ -131,11 +173,16 @@ public class AIController {
 
             Document doc = documentMapper.selectById(documentId);
             if (doc == null) return Result.error("文档不存在");
-            if (doc.getContentText() == null || doc.getContentText().isBlank()) {
+
+            String docContent = doc.getRawText();
+            if (docContent == null || docContent.isBlank()) {
+                docContent = doc.getContentText();
+            }
+            if (docContent == null || docContent.isBlank()) {
                 return Result.error("文档内容为空");
             }
 
-            String keyInfo = aiService.extractKeyInfo(doc.getContentText());
+            String keyInfo = aiService.extractKeyInfo(docContent);
             return Result.success(Map.of("info", keyInfo, "title", doc.getTitle()));
         } catch (Exception e) {
             log.error("信息提取失败", e);

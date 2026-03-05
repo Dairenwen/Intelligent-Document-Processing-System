@@ -39,6 +39,11 @@ export const aiAnalyzeData = (data) => request.post('/ai/analyze-data', data)
 
 export const aiExtractInfo = (data) => request.post('/ai/extract-info', data)
 
+export const aiEditDocument = (data) => request.post('/ai/edit-document', data)
+
+export const updateDocumentContent = (id, content) =>
+  request.put(`/documents/${id}/content`, { content })
+
 // ==================== 自动填表 ====================
 
 export const autoFillAuto = (formData, onProgress) =>
