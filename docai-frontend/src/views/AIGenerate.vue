@@ -3,7 +3,7 @@
     <!-- 左侧配置面板 -->
     <div class="config-panel card">
       <div class="panel-head">
-        <div class="panel-icon">✍️</div>
+        <div class="panel-icon"><el-icon :size="28" color="var(--primary)"><EditPen /></el-icon></div>
         <div>
           <h3>智能写作</h3>
           <p class="panel-desc">AI 驱动的公文生成与润色</p>
@@ -21,7 +21,7 @@
               :class="{ active: docType === t.value }"
               @click="docType = t.value"
             >
-              <span class="type-icon">{{ t.icon }}</span>
+              <span class="type-icon"><el-icon :size="20"><component :is="t.icon" /></el-icon></span>
               <span class="type-label">{{ t.value }}</span>
             </div>
           </div>
@@ -70,7 +70,7 @@
       <!-- 空状态 -->
       <div class="empty-preview" v-if="!generatedContent && !generating">
         <div class="empty-anim">
-          <div class="pen-icon">🖊️</div>
+          <div class="pen-icon"><el-icon :size="48" color="var(--text-muted)"><EditPen /></el-icon></div>
           <div class="paper-lines">
             <div class="pline"></div>
             <div class="pline"></div>
@@ -146,7 +146,8 @@ import { aiGenerate, aiPolish } from '../api'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 import {
-  MagicStick, CopyDocument, Brush, Download
+  MagicStick, CopyDocument, Brush, Download, EditPen,
+  Bell, DataLine, Message, Promotion, Notebook, ChatLineSquare, CircleCheck, Document
 } from '@element-plus/icons-vue'
 
 const docType = ref('通知')
@@ -157,14 +158,14 @@ const generating = ref(false)
 const polishing = ref(false)
 
 const docTypes = [
-  { value: '通知', icon: '📢' },
-  { value: '报告', icon: '📊' },
-  { value: '请示', icon: '📨' },
-  { value: '函',   icon: '✉️' },
-  { value: '纪要', icon: '📋' },
-  { value: '通报', icon: '📣' },
-  { value: '批复', icon: '✅' },
-  { value: '其他', icon: '📝' }
+  { value: '通知', icon: 'Bell' },
+  { value: '报告', icon: 'DataLine' },
+  { value: '请示', icon: 'Message' },
+  { value: '函',   icon: 'Promotion' },
+  { value: '纪要', icon: 'Notebook' },
+  { value: '通报', icon: 'ChatLineSquare' },
+  { value: '批复', icon: 'CircleCheck' },
+  { value: '其他', icon: 'Document' }
 ]
 
 const generate = async () => {

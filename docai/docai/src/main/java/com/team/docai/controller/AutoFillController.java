@@ -32,12 +32,13 @@ public class AutoFillController {
     @PostMapping("/single")
     public ResponseEntity<byte[]> fillSingle(
             @RequestParam("template") MultipartFile templateFile,
-            @RequestParam(value = "sourceDocIds", required = false) List<Long> sourceDocIds) {
+            @RequestParam(value = "sourceDocIds", required = false) List<Long> sourceDocIds,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
         try {
             long start = System.currentTimeMillis();
             byte[] filledBytes = (sourceDocIds != null && !sourceDocIds.isEmpty())
                     ? autoFillService.autoFill(sourceDocIds, templateFile)
-                    : autoFillService.autoFillFromAllDocs(templateFile);
+                    : autoFillService.autoFillFromAllDocs(templateFile, userId);
             long elapsed = System.currentTimeMillis() - start;
 
             String originalName = templateFile.getOriginalFilename();
@@ -66,13 +67,14 @@ public class AutoFillController {
     @PostMapping("/batch")
     public ResponseEntity<byte[]> fillBatch(
             @RequestParam("templates") List<MultipartFile> templateFiles,
-            @RequestParam(value = "sourceDocIds", required = false) List<Long> sourceDocIds) {
+            @RequestParam(value = "sourceDocIds", required = false) List<Long> sourceDocIds,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
         try {
             long start = System.currentTimeMillis();
 
             Map<String, byte[]> results = (sourceDocIds != null && !sourceDocIds.isEmpty())
                     ? autoFillService.batchAutoFill(sourceDocIds, templateFiles)
-                    : autoFillService.batchAutoFillFromAllDocs(templateFiles);
+                    : autoFillService.batchAutoFillFromAllDocs(templateFiles, userId);
 
             if (results.isEmpty()) {
                 return ResponseEntity.badRequest()
@@ -107,10 +109,11 @@ public class AutoFillController {
      */
     @PostMapping("/auto")
     public ResponseEntity<byte[]> fillAuto(
-            @RequestParam("template") MultipartFile templateFile) {
+            @RequestParam("template") MultipartFile templateFile,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
         try {
             long start = System.currentTimeMillis();
-            byte[] filledBytes = autoFillService.autoFillFromAllDocs(templateFile);
+            byte[] filledBytes = autoFillService.autoFillFromAllDocs(templateFile, userId);
             long elapsed = System.currentTimeMillis() - start;
 
             String originalName = templateFile.getOriginalFilename();
@@ -137,11 +140,12 @@ public class AutoFillController {
      */
     @PostMapping("/auto-batch")
     public ResponseEntity<byte[]> fillAutoBatch(
-            @RequestParam("templates") List<MultipartFile> templateFiles) {
+            @RequestParam("templates") List<MultipartFile> templateFiles,
+            @RequestAttribute(value = "userId", required = false) Long userId) {
         try {
             long start = System.currentTimeMillis();
 
-            Map<String, byte[]> results = autoFillService.batchAutoFillFromAllDocs(templateFiles);
+            Map<String, byte[]> results = autoFillService.batchAutoFillFromAllDocs(templateFiles, userId);
 
             if (results.isEmpty()) {
                 return ResponseEntity.badRequest()

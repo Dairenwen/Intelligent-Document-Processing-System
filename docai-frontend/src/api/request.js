@@ -54,8 +54,14 @@ request.interceptors.response.use(
         case 413:
           ElMessage.error('上传文件过大')
           break
+        case 429:
+          ElMessage.warning('服务繁忙，请稍后重试')
+          break
         case 500:
           ElMessage.error('服务器内部错误: ' + msg)
+          break
+        case 503:
+          ElMessage.warning('AI服务暂时不可用，请稍后重试')
           break
         default:
           ElMessage.error(`请求失败(${status}): ${msg}`)

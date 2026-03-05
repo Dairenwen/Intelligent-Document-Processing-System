@@ -14,7 +14,7 @@
       <div class="step-panel card">
         <div class="panel-header">
           <div>
-            <h3>📋 上传模板文件</h3>
+            <h3><el-icon :size="18"><Document /></el-icon> 上传模板文件</h3>
             <p class="hint">上传模板后，系统将自动从数据库中匹配已上传的文档数据进行智能填充</p>
           </div>
         </div>
@@ -52,7 +52,7 @@
         </div>
 
         <div class="template-tips card" style="background: #FFFBEB; border-color: #FDE68A;">
-          <h4>💡 模板使用提示</h4>
+          <h4><el-icon :size="14"><InfoFilled /></el-icon> 模板使用提示</h4>
           <ul>
             <li>Word模板：在需要填写的位置使用 <code v-pre>{{字段名}}</code> 占位符，或留空表格单元格</li>
             <li>Excel模板：第一行作为表头，下方空单元格将根据表头名称自动填充</li>
@@ -73,7 +73,7 @@
     <div v-if="currentStep === 1" class="step-content">
       <div class="step-panel card">
         <div class="panel-header">
-          <h3>🤖 AI 正在智能填充...</h3>
+          <h3><el-icon :size="18"><MagicStick /></el-icon> AI 正在智能填充...</h3>
         </div>
         <div class="filling-progress">
           <div class="progress-animation">
@@ -105,11 +105,11 @@
     </div>
 
     <!-- Step 3: 结果 -->
-    <div v-if="currentStep === 2" class="step-content">
+    <div v-if="currentStep >= 2" class="step-content">
       <div class="step-panel card">
         <div class="panel-header">
           <div>
-            <h3>{{ fillError ? '❌ 填充失败' : '✅ 填充完成' }}</h3>
+            <h3>{{ fillError ? '填充失败' : '填充完成' }}</h3>
           </div>
           <el-button @click="resetAll">
             <el-icon><RefreshRight /></el-icon> 继续填表
@@ -117,12 +117,12 @@
         </div>
         <div class="result-area">
           <div class="result-success" v-if="fillResult && !fillError">
-            <div class="result-icon">🎉</div>
+            <div class="result-icon"><el-icon :size="64" color="#10B981"><SuccessFilled /></el-icon></div>
             <h4>智能填表已完成！</h4>
             <p>耗时: {{ fillTimeDisplay }}，已使用 {{ extractedCount }} 个文档数据源</p>
             <div class="result-file-list" v-if="resultFiles.length > 0">
               <div class="result-file-item" v-for="(f, i) in resultFiles" :key="i">
-                <span class="rf-icon">{{ f.name.endsWith('.xlsx') ? '📊' : '📘' }}</span>
+                <span class="rf-icon"><el-icon :size="24" :color="f.name.endsWith('.xlsx') ? '#10B981' : '#3B82F6'"><Document /></el-icon></span>
                 <span class="rf-name">{{ f.name }}</span>
                 <el-button size="small" type="primary" @click="downloadSingleResult(f)">
                   <el-icon><Download /></el-icon> 下载
@@ -136,7 +136,7 @@
             </div>
           </div>
           <div class="result-error" v-if="fillError">
-            <div class="result-icon">❌</div>
+            <div class="result-icon"><el-icon :size="64" color="#EF4444"><CircleCloseFilled /></el-icon></div>
             <h4>填充失败</h4>
             <p>{{ fillError }}</p>
             <el-button type="primary" @click="currentStep = 0">重新选择模板</el-button>
@@ -153,7 +153,8 @@ import { useRouter } from 'vue-router'
 import { getDocuments, autoFillAuto, autoFillAutoBatch, downloadBlob } from '../api'
 import { ElMessage } from 'element-plus'
 import {
-  UploadFilled, MagicStick, Download, InfoFilled, WarningFilled, RefreshRight
+  UploadFilled, MagicStick, Download, InfoFilled, WarningFilled, RefreshRight,
+  Document, SuccessFilled, CircleCloseFilled
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -180,7 +181,7 @@ const fillTimeDisplay = computed(() => {
 })
 
 const formatProgress = (percentage) => {
-  return Math.round(percentage) + '%'
+  return Math.floor(percentage) + '%'
 }
 
 // Methods
@@ -254,7 +255,7 @@ const startFill = async () => {
       }]
     }
 
-    setTimeout(() => { currentStep.value = 2 }, 800)
+    setTimeout(() => { currentStep.value = 3 }, 800)
 
   } catch (e) {
     clearInterval(progressTimer)

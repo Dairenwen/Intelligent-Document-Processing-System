@@ -7,9 +7,13 @@
       </div>
       <div class="sidebar-body" v-if="!sidebarCollapsed">
         <div class="sidebar-section">
-          <h4>📎 关联文档</h4>
+          <h4>
+            <el-icon :size="14"><Link /></el-icon> 关联文档
+          </h4>
           <div v-if="currentDoc" class="linked-doc">
-            <div class="linked-doc-icon">{{ fileIcon(currentDoc.fileType) }}</div>
+            <div class="linked-doc-icon">
+              <el-icon :size="20"><Document /></el-icon>
+            </div>
             <div class="linked-doc-info">
               <span class="linked-doc-name">{{ currentDoc.title }}</span>
               <el-tag size="small" type="success" effect="plain">已加载</el-tag>
@@ -37,31 +41,35 @@
 
         <!-- 文档操作 -->
         <div class="sidebar-section" v-if="currentDoc">
-          <h4>🛠️ 文档操作</h4>
+          <h4>
+            <el-icon :size="14"><Setting /></el-icon> 文档操作
+          </h4>
           <div class="doc-commands">
             <div class="cmd-btn" @click="sendCommand('总结这篇文档的核心内容，提炼关键信息')">
-              <span class="cmd-icon">📋</span><span>内容摘要</span>
+              <el-icon :size="14"><Memo /></el-icon><span>内容摘要</span>
             </div>
             <div class="cmd-btn" @click="sendCommand('提取文档中所有关键数据，包括数字、日期、人名、机构等实体信息，以结构化形式输出')">
-              <span class="cmd-icon">🔍</span><span>信息提取</span>
+              <el-icon :size="14"><Search /></el-icon><span>信息提取</span>
             </div>
             <div class="cmd-btn" @click="sendCommand('请对文档内容进行润色和优化，使语言更规范流畅，格式更清晰')">
-              <span class="cmd-icon">✏️</span><span>润色优化</span>
+              <el-icon :size="14"><EditPen /></el-icon><span>润色优化</span>
             </div>
             <div class="cmd-btn" @click="sendCommand('请调整文档的格式结构，优化标题层级、段落划分、列表格式等，使其更加规范')">
-              <span class="cmd-icon">📐</span><span>格式调整</span>
+              <el-icon :size="14"><SetUp /></el-icon><span>格式调整</span>
             </div>
             <div class="cmd-btn" @click="sendCommand('请分析文档中的数据，给出趋势分析和关键发现')">
-              <span class="cmd-icon">📊</span><span>数据分析</span>
+              <el-icon :size="14"><DataAnalysis /></el-icon><span>数据分析</span>
             </div>
             <div class="cmd-btn" @click="exportAIResult">
-              <span class="cmd-icon">💾</span><span>导出为Word</span>
+              <el-icon :size="14"><Download /></el-icon><span>导出为Word</span>
             </div>
           </div>
         </div>
 
         <div class="sidebar-section">
-          <h4>💡 快捷提问</h4>
+          <h4>
+            <el-icon :size="14"><Promotion /></el-icon> 快捷提问
+          </h4>
           <div class="quick-questions">
             <div
               class="quick-q"
@@ -107,20 +115,29 @@
       <div class="messages-area" ref="chatArea">
         <!-- 欢迎卡片 -->
         <div class="welcome-card" v-if="messages.length <= 1">
-          <div class="welcome-icon">🤖</div>
+          <div class="welcome-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="11" stroke="var(--primary)" stroke-width="1.5"/>
+              <circle cx="12" cy="12" r="4" fill="var(--primary)"/>
+              <line x1="12" y1="1" x2="12" y2="5" stroke="var(--primary)" stroke-width="1.5"/>
+              <line x1="12" y1="19" x2="12" y2="23" stroke="var(--primary)" stroke-width="1.5"/>
+              <line x1="1" y1="12" x2="5" y2="12" stroke="var(--primary)" stroke-width="1.5"/>
+              <line x1="19" y1="12" x2="23" y2="12" stroke="var(--primary)" stroke-width="1.5"/>
+            </svg>
+          </div>
           <h3>欢迎使用 DocAI 智能助手</h3>
           <p>支持文档分析、内容总结、智能问答、文档编辑等能力</p>
           <div class="welcome-features">
             <div class="wf-item">
-              <span class="wf-icon">📋</span>
+              <el-icon :size="16"><Memo /></el-icon>
               <span>文档内容理解与提问</span>
             </div>
             <div class="wf-item">
-              <span class="wf-icon">📊</span>
+              <el-icon :size="16"><DataAnalysis /></el-icon>
               <span>数据分析与信息提取</span>
             </div>
             <div class="wf-item">
-              <span class="wf-icon">✍️</span>
+              <el-icon :size="16"><EditPen /></el-icon>
               <span>文档编辑、润色与格式调整</span>
             </div>
           </div>
@@ -157,12 +174,12 @@
             </div>
           </template>
 
-          <!-- 用户消息 -->
+          <!-- 用户消息：消息在左，头像在右 -->
           <template v-else-if="msg.role === 'user'">
             <div class="message-bubble user-bubble">
               <div class="bubble-text">{{ msg.content }}</div>
             </div>
-            <div class="user-avatar">U</div>
+            <div class="user-avatar">{{ avatarChar }}</div>
           </template>
         </div>
 
@@ -209,7 +226,7 @@
           </div>
         </div>
         <div class="input-footer">
-          <span>基于 GLM-4-Flash 大语言模型 · 内容仅供参考</span>
+          <span>基于 GLM-4-Flash 大语言模型 -- 内容仅供参考</span>
         </div>
       </div>
     </div>
@@ -227,10 +244,10 @@
           class="doc-picker-item"
           @click="selectDoc(doc)"
         >
-          <span class="dpi-icon">{{ fileIcon(doc.fileType) }}</span>
+          <span class="dpi-icon"><el-icon :size="20"><Document /></el-icon></span>
           <div class="dpi-info">
             <span class="dpi-name">{{ doc.title }}</span>
-            <span class="dpi-meta">{{ doc.fileType?.toUpperCase() }} · {{ formatDate(doc.createdAt) }}</span>
+            <span class="dpi-meta">{{ doc.fileType?.toUpperCase() }} - {{ formatDate(doc.createdAt) }}</span>
           </div>
           <el-tag v-if="doc.contentText" size="small" type="success" effect="plain">已提取</el-tag>
           <el-tag v-else size="small" type="info" effect="plain">未提取</el-tag>
@@ -241,14 +258,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { aiChat, getDocument, getDocuments, downloadBlob } from '../api'
 import request from '../api/request'
 import { ElMessage } from 'element-plus'
 import {
   Delete, Position, CopyDocument, Document, Download, Close, FolderOpened,
-  DArrowLeft, DArrowRight
+  DArrowLeft, DArrowRight, Link, Setting, Memo, Search, EditPen, SetUp,
+  DataAnalysis, Promotion
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -269,10 +287,13 @@ const docList = ref([])
 const loadingDocList = ref(false)
 const lastAIContent = ref('')
 
-const fileIcon = (type) => {
-  const map = { docx: '📘', xlsx: '📊', md: '📝', txt: '📄' }
-  return map[type] || '📄'
-}
+// 用户信息
+const userId = localStorage.getItem('userId') || 'default'
+const nickname = localStorage.getItem('nickname') || '用户'
+const avatarChar = computed(() => nickname?.charAt(0) || 'U')
+
+// 历史记录key
+const chatStorageKey = computed(() => `docai_chat_${userId}_${currentDocId.value || 'general'}`)
 
 const formatDate = (d) => d ? d.split('T')[0] : '-'
 
@@ -298,6 +319,39 @@ const quickQuestions = computed(() => {
     '写一个项目进度汇报模板'
   ]
 })
+
+// === 历史记录持久化 ===
+const saveChatHistory = () => {
+  try {
+    const toSave = messages.value.filter(m => !m._isWelcome).map(m => ({
+      role: m.role,
+      content: m.content
+    }))
+    localStorage.setItem(chatStorageKey.value, JSON.stringify(toSave))
+  } catch (e) {
+    console.warn('保存聊天记录失败', e)
+  }
+}
+
+const loadChatHistory = () => {
+  try {
+    const saved = localStorage.getItem(chatStorageKey.value)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed
+      }
+    }
+  } catch (e) {
+    console.warn('加载聊天记录失败', e)
+  }
+  return null
+}
+
+// 监听消息变化自动保存
+watch(messages, () => {
+  saveChatHistory()
+}, { deep: true })
 
 // Load document by ID
 const loadDocument = async (id) => {
@@ -332,7 +386,7 @@ const selectDoc = async (doc) => {
   currentDocId.value = doc.id
   messages.value.push({
     role: 'ai',
-    content: `已关联文档《${doc.title}》。\n\n我可以帮您：\n- 📋 总结文档核心内容\n- 🔍 提取关键信息和数据\n- ✏️ 编辑润色文档\n- 📐 调整文档格式\n- 💬 回答文档相关问题`,
+    content: `已关联文档"${doc.title}"。\n\n我可以帮您：\n- 总结文档核心内容\n- 提取关键信息和数据\n- 编辑润色文档\n- 调整文档格式\n- 回答文档相关问题`,
     _isWelcome: true
   })
   await scrollToBottom()
@@ -354,30 +408,44 @@ const downloadDoc = () => {
 }
 
 onMounted(async () => {
-  // Load document list for picker
   loadDocList()
 
   if (currentDocId.value) {
     await loadDocument(currentDocId.value)
+  }
+
+  // 尝试加载历史记录
+  const history = loadChatHistory()
+  if (history && history.length > 0) {
+    messages.value = history
     if (currentDoc.value) {
-      messages.value.push({
+      messages.value.unshift({
         role: 'ai',
-        content: `您好，我已加载文档《${currentDoc.value.title}》。\n\n我可以帮您：\n- 📋 总结文档核心内容\n- 🔍 提取关键信息和数据\n- ✏️ 编辑润色优化\n- 📐 调整文档格式结构\n- 💬 解答文档相关疑问\n\n您可以直接提问，或使用左侧快捷操作。`,
+        content: `已恢复与文档"${currentDoc.value.title}"的历史对话。`,
         _isWelcome: true
       })
-    } else {
+    }
+    await scrollToBottom()
+  } else {
+    if (currentDocId.value && currentDoc.value) {
+      messages.value.push({
+        role: 'ai',
+        content: `您好，我已加载文档"${currentDoc.value.title}"。\n\n我可以帮您：\n- 总结文档核心内容\n- 提取关键信息和数据\n- 编辑润色优化\n- 调整文档格式结构\n- 解答文档相关疑问\n\n您可以直接提问，或使用左侧快捷操作。`,
+        _isWelcome: true
+      })
+    } else if (currentDocId.value && !currentDoc.value) {
       messages.value.push({
         role: 'ai',
         content: '您好！我是 DocAI 智能助手。文档加载失败，您可以在左侧重新选择文档，或直接与我对话。',
         _isWelcome: true
       })
+    } else {
+      messages.value.push({
+        role: 'ai',
+        content: '您好！我是 DocAI 智能助手。我可以帮您撰写公文、分析文档、提取关键信息、编辑优化文档。\n\n提示：关联文档后可使用更多功能（点击左侧"选择文档关联"）。',
+        _isWelcome: true
+      })
     }
-  } else {
-    messages.value.push({
-      role: 'ai',
-      content: '您好！我是 DocAI 智能助手。我可以帮您撰写公文、分析文档、提取关键信息、编辑优化文档。\n\n💡 关联文档后可使用更多功能（点击左侧「选择文档关联」）。',
-      _isWelcome: true
-    })
   }
 })
 
@@ -403,7 +471,7 @@ const sendMessage = async () => {
   } catch (err) {
     messages.value.push({
       role: 'ai',
-      content: '⚠️ 抱歉，服务暂时繁忙，请稍后再试。如果问题持续，请检查网络连接或后端服务是否启动。'
+      content: '抱歉，服务暂时繁忙，请稍后再试。如果问题持续，请检查网络连接或后端服务是否启动。'
     })
   } finally {
     loading.value = false
@@ -421,7 +489,6 @@ const exportAIResult = async () => {
       title: currentDoc.value ? currentDoc.value.title + '_AI处理结果' : 'AI_生成内容',
       content: lastAIContent.value
     }, { responseType: 'blob' })
-
     const filename = (currentDoc.value ? currentDoc.value.title + '_AI结果' : 'AI生成内容') + '.docx'
     downloadBlob(new Blob([response.data]), filename)
     ElMessage.success('已导出为Word文档')
@@ -446,10 +513,11 @@ const exportContentToWord = async (content) => {
 const clearChat = () => {
   messages.value = []
   lastAIContent.value = ''
+  try { localStorage.removeItem(chatStorageKey.value) } catch (e) {}
   messages.value.push({
     role: 'ai',
     content: currentDoc.value
-      ? `对话已重置。请继续提问关于《${currentDoc.value.title}》的内容。`
+      ? `对话已重置。请继续提问关于"${currentDoc.value.title}"的内容。`
       : '对话已重置。请问有什么可以帮您？',
     _isWelcome: true
   })
@@ -459,7 +527,6 @@ const copyText = (text) => {
   navigator.clipboard.writeText(text).then(() => {
     ElMessage.success('已复制')
   }).catch(() => {
-    // Fallback for non-HTTPS environments
     const ta = document.createElement('textarea')
     ta.value = text
     document.body.appendChild(ta)
@@ -493,512 +560,78 @@ const scrollToBottom = async () => {
 </script>
 
 <style scoped>
-.chat-page {
-  display: flex;
-  height: 100%;
-  gap: 0;
-  background: var(--bg-base);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  box-shadow: var(--shadow-md);
-}
-
-/* 侧边栏 */
-.chat-sidebar {
-  width: 280px;
-  background: var(--bg-card);
-  border-right: 1px solid var(--border-light);
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  transition: width 0.3s ease;
-}
-
-.chat-sidebar.collapsed {
-  width: 0;
-  border-right: none;
-}
-
-.sidebar-toggle {
-  position: absolute;
-  right: -14px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-light);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 10;
-  transition: all 0.2s;
-}
-
-.sidebar-toggle:hover {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
-}
-
-.sidebar-body {
-  padding: 20px;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.sidebar-section {
-  margin-bottom: 24px;
-}
-
-.sidebar-section h4 {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin: 0 0 12px 0;
-}
-
-.linked-doc {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 12px;
-  background: rgba(79, 70, 229, 0.05);
-  border: 1px solid rgba(79, 70, 229, 0.15);
-  border-radius: var(--radius-md);
-  flex-wrap: wrap;
-}
-
-.linked-doc-icon { font-size: 24px; }
-
-.linked-doc-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-}
-
-.linked-doc-name {
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.linked-doc-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.no-doc-tip {
-  text-align: center;
-  padding: 16px 0;
-}
-
-.select-doc-btn {
-  background: rgba(79, 70, 229, 0.1) !important;
-  border-color: var(--primary) !important;
-  color: var(--primary) !important;
-  font-weight: 500;
-}
-
-.select-doc-btn:hover {
-  background: rgba(79, 70, 229, 0.2) !important;
-}
-
-/* Document commands */
-.doc-commands {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.cmd-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 10px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  background: var(--bg-base);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.cmd-btn:hover {
-  background: rgba(79, 70, 229, 0.06);
-  border-color: var(--primary);
-  color: var(--primary);
-}
-
-.cmd-icon { font-size: 14px; }
-
-.quick-questions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.quick-q {
-  padding: 10px 12px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  background: var(--bg-base);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all 0.2s;
-  line-height: 1.4;
-}
-
-.quick-q:hover {
-  background: rgba(79, 70, 229, 0.06);
-  border-color: var(--primary);
-  color: var(--primary);
-}
-
-/* 主区域 */
-.chat-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.chat-header {
-  padding: 16px 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--border-light);
-  background: var(--bg-card);
-}
-
-.chat-title-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.chat-logo {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(79, 70, 229, 0.08);
-  border-radius: var(--radius-md);
-}
-
-.chat-title-text {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.chat-model-tag {
-  display: inline-block;
-  font-size: 11px;
-  padding: 2px 8px;
-  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
-  color: white;
-  border-radius: 10px;
-  margin-left: 8px;
-  font-weight: 500;
-}
-
-/* 消息区域 */
-.messages-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px;
-  scroll-behavior: smooth;
-}
-
-.welcome-card {
-  text-align: center;
-  padding: 40px 20px;
-  margin-bottom: 20px;
-}
-
-.welcome-icon {
-  font-size: 48px;
-  margin-bottom: 12px;
-}
-
-.welcome-card h3 {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 8px 0;
-}
-
-.welcome-card > p {
-  color: var(--text-muted);
-  font-size: 14px;
-  margin: 0 0 24px 0;
-}
-
-.welcome-features {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.wf-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
-.wf-icon { font-size: 16px; }
-
-/* 消息气泡 */
-.message-wrapper {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
-  align-items: flex-start;
-}
-
-.message-wrapper.user {
-  justify-content: flex-end;
-}
-
-.ai-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(79, 70, 229, 0.08);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.user-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
-  color: white;
-  font-size: 14px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.message-bubble {
-  max-width: 72%;
-  padding: 14px 18px;
-  border-radius: 16px;
-  font-size: 14px;
-  line-height: 1.7;
-  position: relative;
-  word-break: break-word;
-  min-width: 40px;
-}
-
-.ai-bubble {
-  background: var(--bg-card);
-  color: var(--text-primary);
-  border: 1px solid var(--border-light);
-  border-radius: 4px 16px 16px 16px;
-}
-
-.user-bubble {
-  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
-  color: white;
-  border-radius: 16px 4px 16px 16px;
-}
-
-.bubble-text :deep(code) {
-  background: rgba(0, 0, 0, 0.06);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-.bubble-text :deep(strong) {
-  font-weight: 700;
-}
-
-.bubble-text :deep(li) {
-  margin-left: 16px;
-  list-style: disc;
-}
-
-.bubble-actions {
-  display: flex;
-  gap: 4px;
-  margin-top: 8px;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.message-bubble:hover .bubble-actions {
-  opacity: 1;
-}
-
-.action-btn {
-  background: none;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 4px 8px;
-  cursor: pointer;
-  color: var(--text-muted);
-  transition: all 0.2s;
-}
-
-.action-btn:hover {
-  background: var(--bg-base);
-  color: var(--primary);
-  border-color: var(--primary);
-}
-
-/* Typing dots */
-.loading-bubble {
-  min-width: 60px;
-}
-
-.typing-dots {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  height: 20px;
-}
-
-.typing-dots span {
-  width: 7px;
-  height: 7px;
-  background: var(--primary);
-  border-radius: 50%;
-  opacity: 0.4;
-  animation: typingDot 1.4s infinite ease-in-out;
-}
-
+.chat-page { display: flex; height: 100%; gap: 0; background: var(--bg-base); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-md); }
+.chat-sidebar { width: 280px; background: var(--bg-card); border-right: 1px solid var(--border-light); display: flex; flex-direction: column; position: relative; transition: width 0.3s ease; }
+.chat-sidebar.collapsed { width: 0; border-right: none; }
+.sidebar-toggle { position: absolute; right: -14px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 10; transition: all 0.2s; }
+.sidebar-toggle:hover { background: var(--primary); color: white; border-color: var(--primary); }
+.sidebar-body { padding: 20px; overflow-y: auto; flex: 1; }
+.sidebar-section { margin-bottom: 24px; }
+.sidebar-section h4 { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 0 0 12px 0; display: flex; align-items: center; gap: 6px; }
+.linked-doc { display: flex; gap: 10px; align-items: center; padding: 12px; background: rgba(79, 70, 229, 0.05); border: 1px solid rgba(79, 70, 229, 0.15); border-radius: var(--radius-md); flex-wrap: wrap; }
+.linked-doc-icon { font-size: 24px; color: var(--primary); }
+.linked-doc-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.linked-doc-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linked-doc-actions { display: flex; gap: 4px; }
+.no-doc-tip { text-align: center; padding: 16px 0; }
+.select-doc-btn { background: rgba(79, 70, 229, 0.1) !important; border-color: var(--primary) !important; color: var(--primary) !important; font-weight: 500; }
+.select-doc-btn:hover { background: rgba(79, 70, 229, 0.2) !important; }
+.doc-commands { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cmd-btn { display: flex; align-items: center; gap: 6px; padding: 10px 10px; font-size: 12px; color: var(--text-secondary); background: var(--bg-base); border: 1px solid var(--border-light); border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s; }
+.cmd-btn:hover { background: rgba(79, 70, 229, 0.06); border-color: var(--primary); color: var(--primary); }
+.quick-questions { display: flex; flex-direction: column; gap: 8px; }
+.quick-q { padding: 10px 12px; font-size: 12px; color: var(--text-secondary); background: var(--bg-base); border: 1px solid var(--border-light); border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s; line-height: 1.4; }
+.quick-q:hover { background: rgba(79, 70, 229, 0.06); border-color: var(--primary); color: var(--primary); }
+.chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.chat-header { padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); background: var(--bg-card); }
+.chat-title-row { display: flex; align-items: center; gap: 12px; }
+.chat-logo { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: rgba(79, 70, 229, 0.08); border-radius: var(--radius-md); }
+.chat-title-text { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.chat-model-tag { display: inline-block; font-size: 11px; padding: 2px 8px; background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: white; border-radius: 10px; margin-left: 8px; font-weight: 500; }
+.messages-area { flex: 1; overflow-y: auto; padding: 24px; scroll-behavior: smooth; }
+.welcome-card { text-align: center; padding: 40px 20px; margin-bottom: 20px; }
+.welcome-icon { margin-bottom: 12px; display: flex; justify-content: center; }
+.welcome-card h3 { font-size: 20px; font-weight: 700; color: var(--text-primary); margin: 0 0 8px 0; }
+.welcome-card > p { color: var(--text-muted); font-size: 14px; margin: 0 0 24px 0; }
+.welcome-features { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
+.wf-item { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--bg-card); border: 1px solid var(--border-light); border-radius: var(--radius-md); font-size: 13px; color: var(--text-secondary); }
+.message-wrapper { display: flex; gap: 12px; margin-bottom: 20px; align-items: flex-start; }
+.message-wrapper.user { flex-direction: row; justify-content: flex-end; }
+.ai-avatar { width: 36px; height: 36px; border-radius: 50%; background: rgba(79, 70, 229, 0.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.user-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: white; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; order: 2; }
+.message-wrapper.user .message-bubble { order: 1; }
+.message-bubble { max-width: 72%; padding: 14px 18px; border-radius: 16px; font-size: 14px; line-height: 1.7; position: relative; word-break: break-word; min-width: 40px; }
+.ai-bubble { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 4px 16px 16px 16px; }
+.user-bubble { background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: white; border-radius: 16px 4px 16px 16px; }
+.bubble-text :deep(code) { background: rgba(0, 0, 0, 0.06); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+.bubble-text :deep(strong) { font-weight: 700; }
+.bubble-text :deep(li) { margin-left: 16px; list-style: disc; }
+.bubble-actions { display: flex; gap: 4px; margin-top: 8px; opacity: 0; transition: opacity 0.2s; }
+.message-bubble:hover .bubble-actions { opacity: 1; }
+.action-btn { background: none; border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 4px 8px; cursor: pointer; color: var(--text-muted); transition: all 0.2s; }
+.action-btn:hover { background: var(--bg-base); color: var(--primary); border-color: var(--primary); }
+.loading-bubble { min-width: 60px; }
+.typing-dots { display: flex; gap: 4px; align-items: center; height: 20px; }
+.typing-dots span { width: 7px; height: 7px; background: var(--primary); border-radius: 50%; opacity: 0.4; animation: typingDot 1.4s infinite ease-in-out; }
 .typing-dots span:nth-child(1) { animation-delay: 0s; }
 .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
 .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes typingDot {
-  0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
-  30% { opacity: 1; transform: scale(1.1); }
-}
-
-/* 输入区域 */
-.input-area {
-  padding: 16px 24px;
-  background: var(--bg-card);
-  border-top: 1px solid var(--border-light);
-}
-
-.input-box {
-  display: flex;
-  align-items: flex-end;
-  background: var(--bg-base);
-  border: 2px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  padding: 8px;
-  transition: all 0.3s;
-}
-
-.input-box.focused {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-}
-
-.input-box :deep(.el-textarea__inner) {
-  border: none;
-  box-shadow: none;
-  background: transparent;
-  padding: 8px 12px;
-  resize: none;
-}
-
-.input-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px 4px 0;
-}
-
-.char-count {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.send-btn {
-  width: 36px;
-  height: 36px;
-}
-
-.input-footer {
-  text-align: center;
-  padding: 8px 0 0 0;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-/* Document picker dialog */
-.doc-picker-search {
-  margin-bottom: 16px;
-}
-
-.doc-picker-list {
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.doc-picker-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all 0.2s;
-  border: 1px solid transparent;
-}
-
-.doc-picker-item:hover {
-  background: rgba(79, 70, 229, 0.05);
-  border-color: rgba(79, 70, 229, 0.15);
-}
-
-.dpi-icon { font-size: 24px; }
-
-.dpi-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.dpi-name {
-  display: block;
-  font-size: 14px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dpi-meta {
-  font-size: 12px;
-  color: var(--text-muted);
-}
+@keyframes typingDot { 0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); } 30% { opacity: 1; transform: scale(1.1); } }
+.input-area { padding: 16px 24px; background: var(--bg-card); border-top: 1px solid var(--border-light); }
+.input-box { display: flex; align-items: flex-end; background: var(--bg-base); border: 2px solid var(--border-light); border-radius: var(--radius-lg); padding: 8px; transition: all 0.3s; }
+.input-box.focused { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+.input-box :deep(.el-textarea__inner) { border: none; box-shadow: none; background: transparent; padding: 8px 12px; resize: none; }
+.input-actions { display: flex; align-items: center; gap: 8px; padding: 0 8px 4px 0; }
+.char-count { font-size: 11px; color: var(--text-muted); }
+.send-btn { width: 36px; height: 36px; }
+.input-footer { text-align: center; padding: 8px 0 0 0; font-size: 11px; color: var(--text-muted); }
+.doc-picker-search { margin-bottom: 16px; }
+.doc-picker-list { max-height: 400px; overflow-y: auto; }
+.doc-picker-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
+.doc-picker-item:hover { background: rgba(79, 70, 229, 0.05); border-color: rgba(79, 70, 229, 0.15); }
+.dpi-icon { color: var(--primary); }
+.dpi-info { flex: 1; min-width: 0; }
+.dpi-name { display: block; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dpi-meta { font-size: 12px; color: var(--text-muted); }
+.tip-text { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
 </style>

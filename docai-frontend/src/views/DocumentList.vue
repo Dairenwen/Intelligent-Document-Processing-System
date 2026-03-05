@@ -59,10 +59,10 @@
           <template #default="{ row }">
             <div class="doc-name-cell">
               <span class="doc-icon">
-                <span v-if="row.fileType === 'docx'">📘</span>
-                <span v-else-if="row.fileType === 'xlsx'">📊</span>
-                <span v-else-if="row.fileType === 'md'">📝</span>
-                <span v-else>📄</span>
+                <el-icon :size="20" v-if="row.fileType === 'docx'" color="#3B82F6"><Document /></el-icon>
+                <el-icon :size="20" v-else-if="row.fileType === 'xlsx'" color="#10B981"><Grid /></el-icon>
+                <el-icon :size="20" v-else-if="row.fileType === 'md'" color="#F59E0B"><EditPen /></el-icon>
+                <el-icon :size="20" v-else color="#6B7280"><Document /></el-icon>
               </span>
               <div class="doc-name-wrap">
                 <span class="doc-title">{{ row.title }}</span>
@@ -76,10 +76,10 @@
         <el-table-column label="提取状态" width="120" align="center">
           <template #default="{ row }">
             <el-tag v-if="row.contentText && row.contentText.length > 0" size="small" type="success" effect="plain" round>
-              ✅ 已提取
+              已提取
             </el-tag>
             <el-tag v-else size="small" type="danger" effect="plain" round>
-              ❌ 未提取
+              未提取
             </el-tag>
           </template>
         </el-table-column>
@@ -148,7 +148,7 @@
     </div>
 
     <!-- 上传文档弹窗 -->
-    <el-dialog v-model="showUploadDialog" title="📤 上传文档" width="560px" @close="onUploadDialogClose">
+    <el-dialog v-model="showUploadDialog" title="上传文档" width="560px" @close="onUploadDialogClose">
       <div class="upload-area">
         <el-upload
           ref="uploadRef"
@@ -183,7 +183,7 @@
       <div class="info-result" v-loading="infoLoading">
         <div v-if="!infoLoading && extractedInfo" class="info-content">
           <div class="info-section" v-if="infoDocTitle">
-            <h4>📄 文档：{{ infoDocTitle }}</h4>
+            <h4>文档：{{ infoDocTitle }}</h4>
           </div>
           <div class="info-section">
             <pre class="info-text">{{ extractedInfo }}</pre>
@@ -194,10 +194,10 @@
     </el-dialog>
 
     <!-- 查看提取内容弹窗 -->
-    <el-dialog v-model="showContentDialog" title="📋 文档提取内容" width="700px">
+    <el-dialog v-model="showContentDialog" title="文档提取内容" width="700px">
       <div class="content-result">
         <div class="content-section" v-if="viewDocTitle">
-          <h4>📄 文档：{{ viewDocTitle }}</h4>
+          <h4>文档：{{ viewDocTitle }}</h4>
         </div>
         <div class="content-body">
           <pre class="content-text">{{ viewDocContent }}</pre>
@@ -214,7 +214,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
   Search, UploadFilled, Download, Delete, ChatLineRound,
-  DataAnalysis, Refresh, View
+  DataAnalysis, Refresh, View, Document, Grid, EditPen
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -237,7 +237,7 @@ const uploadRef = ref(null)
 const showInfoDialog = ref(false)
 const extractedInfo = ref('')
 const infoLoading = ref(false)
-const infoDialogTitle = ref('📋 AI 关键信息提取')
+const infoDialogTitle = ref('AI 关键信息提取')
 const infoDocTitle = ref('')
 
 // 查看内容
@@ -335,7 +335,7 @@ const downloadDoc = (row) => window.open(`/api/documents/${row.id}/download`)
 // AI关键信息提取
 const extractInfo = async (row) => {
   infoDocTitle.value = row.title
-  infoDialogTitle.value = '🤖 AI 关键信息提取 - ' + row.title
+  infoDialogTitle.value = 'AI 关键信息提取 - ' + row.title
   showInfoDialog.value = true
   infoLoading.value = true
   extractedInfo.value = ''

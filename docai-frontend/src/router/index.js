@@ -40,6 +40,12 @@ const routes = [
         component: () => import('../views/AIChat.vue'),
         meta: { title: 'AI 对话', icon: 'ChatDotRound' }
       },
+      {
+        path: 'ai-generate',
+        name: 'AIGenerate',
+        component: () => import('../views/AIGenerate.vue'),
+        meta: { title: 'AI 写作', icon: 'EditPen' }
+      },
 
     ]
   }

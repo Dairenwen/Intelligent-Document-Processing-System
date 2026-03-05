@@ -1,5 +1,6 @@
 package com.team.docai.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team.docai.entity.Document;
@@ -31,14 +32,14 @@ public class AutoFillService {
     private String uploadDir;
 
     /**
-     * 自动填表（自动模式）- 从数据库中读取所有已提取数据的文档
+     * 自动填表（自动模式）- 从数据库中读取用户已提取数据的文档
      */
-    public byte[] autoFillFromAllDocs(MultipartFile templateFile) throws Exception {
+    public byte[] autoFillFromAllDocs(MultipartFile templateFile, Long userId) throws Exception {
         long startTime = System.currentTimeMillis();
         log.info("开始自动填表(auto模式), 模板文件={}", templateFile.getOriginalFilename());
 
-        // 1. 收集所有已有文档内容
-        String sourceContent = collectAllSourceContent();
+        // 1. 收集用户所有已有文档内容
+        String sourceContent = collectAllSourceContent(userId);
         if (sourceContent.isBlank()) {
             throw new IllegalStateException("数据库中没有可用的文档数据，请先在文档管理中上传并提取文档");
         }
@@ -85,11 +86,11 @@ public class AutoFillService {
     /**
      * 批量自动填表（自动模式）- 无需指定源文档
      */
-    public Map<String, byte[]> batchAutoFillFromAllDocs(List<MultipartFile> templateFiles) throws Exception {
+    public Map<String, byte[]> batchAutoFillFromAllDocs(List<MultipartFile> templateFiles, Long userId) throws Exception {
         long startTime = System.currentTimeMillis();
         log.info("开始批量自动填表(auto模式), 模板数={}", templateFiles.size());
 
-        String sourceContent = collectAllSourceContent();
+        String sourceContent = collectAllSourceContent(userId);
         if (sourceContent.isBlank()) {
             throw new IllegalStateException("数据库中没有可用的文档数据，请先在文档管理中上传并提取文档");
         }
@@ -132,10 +133,14 @@ public class AutoFillService {
     }
 
     /**
-     * 收集数据库中所有已提取数据的文档内容
+     * 收集数据库中所有已提取数据的文档内容（按用户隔离）
      */
-    private String collectAllSourceContent() {
-        List<Document> allDocs = documentMapper.selectList(null);
+    private String collectAllSourceContent(Long userId) {
+        LambdaQueryWrapper<Document> wrapper = new LambdaQueryWrapper<>();
+        if (userId != null) {
+            wrapper.eq(Document::getUserId, userId);
+        }
+        List<Document> allDocs = documentMapper.selectList(wrapper);
         StringBuilder sb = new StringBuilder();
         int count = 0;
         for (Document doc : allDocs) {
@@ -145,7 +150,7 @@ public class AutoFillService {
                 count++;
             }
         }
-        log.info("从数据库中收集到 {} 个有效文档数据", count);
+        log.info("从数据库中收集到 {} 个有效文档数据(userId={})", count, userId);
         return sb.toString();
     }
 

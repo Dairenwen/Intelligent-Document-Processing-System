@@ -84,8 +84,12 @@ public class DocumentController {
     public Result<?> list(@RequestParam(defaultValue = "1") int page,
                           @RequestParam(defaultValue = "20") int size,
                           @RequestParam(required = false) String keyword,
-                          @RequestParam(required = false) String fileType) {
+                          @RequestParam(required = false) String fileType,
+                          @RequestAttribute(value = "userId", required = false) Long userId) {
         LambdaQueryWrapper<Document> wrapper = new LambdaQueryWrapper<>();
+        if (userId != null) {
+            wrapper.eq(Document::getUserId, userId);
+        }
         if (keyword != null && !keyword.isEmpty()) {
             wrapper.like(Document::getTitle, keyword);
         }
@@ -176,12 +180,25 @@ public class DocumentController {
 
     /** 获取文档统计信息 */
     @GetMapping("/stats")
-    public Result<?> stats() {
-        Long total = documentMapper.selectCount(null);
-        Long docxCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>().eq(Document::getFileType, "docx"));
-        Long xlsxCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>().eq(Document::getFileType, "xlsx"));
-        Long txtCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>().eq(Document::getFileType, "txt"));
-        Long mdCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>().eq(Document::getFileType, "md"));
+    public Result<?> stats(@RequestAttribute(value = "userId", required = false) Long userId) {
+        LambdaQueryWrapper<Document> baseWrapper = new LambdaQueryWrapper<>();
+        if (userId != null) {
+            baseWrapper.eq(Document::getUserId, userId);
+        }
+        Long total = documentMapper.selectCount(new LambdaQueryWrapper<Document>()
+                .eq(userId != null, Document::getUserId, userId));
+        Long docxCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>()
+                .eq(userId != null, Document::getUserId, userId)
+                .eq(Document::getFileType, "docx"));
+        Long xlsxCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>()
+                .eq(userId != null, Document::getUserId, userId)
+                .eq(Document::getFileType, "xlsx"));
+        Long txtCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>()
+                .eq(userId != null, Document::getUserId, userId)
+                .eq(Document::getFileType, "txt"));
+        Long mdCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>()
+                .eq(userId != null, Document::getUserId, userId)
+                .eq(Document::getFileType, "md"));
 
         Map<String, Object> stats = new HashMap<>();
         stats.put("total", total);
@@ -208,12 +225,24 @@ public class DocumentController {
             throw new IllegalArgumentException("不支持的文件格式: " + ext + "，仅支持: " + SUPPORTED_EXTENSIONS);
         }
 
-        // 先解析文档内容（transferTo 会使 InputStream 失效，必须先解析）
-        String contentText = "";
+        // 先解析文档原始文本（transferTo 会使 InputStream 失效，必须先解析）
+        String rawText = "";
         try {
-            contentText = docParseService.parseDocument(file);
+            rawText = docParseService.parseDocument(file);
         } catch (Exception e) {
             log.warn("文档内容解析失败: {}, error={}", originalName, e.getMessage());
+        }
+
+        // 使用AI提取结构化信息（如果原始文本非空）
+        String contentText = rawText;
+        if (rawText != null && !rawText.isBlank()) {
+            try {
+                contentText = aiService.extractDocumentInfo(rawText, originalName);
+                log.info("AI信息提取完成: {}, 原文长度={}, 提取结果长度={}", originalName, rawText.length(), contentText.length());
+            } catch (Exception e) {
+                log.warn("AI信息提取失败，保留原始文本: {}, error={}", originalName, e.getMessage());
+                contentText = rawText;
+            }
         }
 
         // 再保存文件到磁盘

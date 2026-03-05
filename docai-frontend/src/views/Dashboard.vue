@@ -37,7 +37,7 @@
           <rect x="162" y="59" width="12" height="3" rx="1" fill="white" opacity="0.7"/>
           <!-- AI Icon -->
           <circle cx="150" cy="110" r="22" fill="#F0FDF4" stroke="#10B981" stroke-width="2"/>
-          <text x="150" y="116" text-anchor="middle" font-size="18">🤖</text>
+          <text x="150" y="116" text-anchor="middle" font-size="14" fill="#10B981" font-weight="bold">AI</text>
         </svg>
       </div>
     </div>
@@ -57,7 +57,7 @@
 
     <!-- 三大核心模块 -->
     <div class="section-title">
-      <h3>🚀 三大核心模块</h3>
+      <h3>三大核心模块</h3>
       <p>覆盖从文档理解到数据提取、自动填表的完整工作流</p>
     </div>
     <div class="modules-grid">
@@ -208,9 +208,18 @@ onMounted(async () => {
 }
 
 .welcome-actions .el-button:not(.el-button--primary) {
-  color: white;
-  border-color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.1);
+  color: white !important;
+  border-color: rgba(255, 255, 255, 0.5) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.welcome-actions .el-button:not(.el-button--primary):hover {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.welcome-actions .el-button {
+  min-width: 140px;
 }
 
 .welcome-illustration {

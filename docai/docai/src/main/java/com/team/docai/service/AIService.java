@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
@@ -26,6 +27,9 @@ public class AIService {
     private int maxRetries;
 
     private ClientV4 client;
+
+    /** 并发限制：最多同时3个AI请求，防止API限流 */
+    private final Semaphore aiSemaphore = new Semaphore(3);
 
     @PostConstruct
     public void init() {
@@ -46,42 +50,60 @@ public class AIService {
     }
 
     /**
-     * AI调用带重试机制 - 核心方法
+     * AI调用带重试机制和并发控制 - 核心方法
      */
     private String invokeWithRetry(List<ChatMessage> messages) {
         Exception lastException = null;
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                ChatCompletionRequest request = ChatCompletionRequest.builder()
-                        .model(model)
-                        .stream(Boolean.FALSE)
-                        .invokeMethod(Constants.invokeMethod)
-                        .messages(messages)
-                        .build();
+        boolean acquired = false;
+        try {
+            // 获取信号量，最多等待60秒
+            acquired = aiSemaphore.tryAcquire(60, TimeUnit.SECONDS);
+            if (!acquired) {
+                throw new RuntimeException("AI服务繁忙，请稍后重试（并发请求过多）");
+            }
 
-                ModelApiResponse response = client.invokeModelApi(request);
-                if (response != null && response.getData() != null
-                        && response.getData().getChoices() != null
-                        && !response.getData().getChoices().isEmpty()) {
-                    var choice = response.getData().getChoices().get(0);
-                    if (choice.getMessage() != null && choice.getMessage().getContent() != null) {
-                        String content = choice.getMessage().getContent().toString();
-                        log.info("AI调用成功, attempt={}, responseLength={}", attempt, content.length());
-                        return content;
+            for (int attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    ChatCompletionRequest request = ChatCompletionRequest.builder()
+                            .model(model)
+                            .stream(Boolean.FALSE)
+                            .invokeMethod(Constants.invokeMethod)
+                            .messages(messages)
+                            .build();
+
+                    ModelApiResponse response = client.invokeModelApi(request);
+                    if (response != null && response.getData() != null
+                            && response.getData().getChoices() != null
+                            && !response.getData().getChoices().isEmpty()) {
+                        var choice = response.getData().getChoices().get(0);
+                        if (choice.getMessage() != null && choice.getMessage().getContent() != null) {
+                            String content = choice.getMessage().getContent().toString();
+                            log.info("AI调用成功, attempt={}, responseLength={}", attempt, content.length());
+                            return content;
+                        }
+                    }
+                    log.warn("AI返回空响应, attempt={}", attempt);
+                } catch (Exception e) {
+                    lastException = e;
+                    log.warn("AI调用失败, attempt={}/{}, error={}", attempt, maxRetries, e.getMessage());
+                    if (attempt < maxRetries) {
+                        try {
+                            // 指数退避：2s, 4s, 8s...
+                            long waitMs = (long) Math.pow(2, attempt) * 1000;
+                            Thread.sleep(waitMs);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
                     }
                 }
-                log.warn("AI返回空响应, attempt={}", attempt);
-            } catch (Exception e) {
-                lastException = e;
-                log.warn("AI调用失败, attempt={}/{}, error={}", attempt, maxRetries, e.getMessage());
-                if (attempt < maxRetries) {
-                    try {
-                        Thread.sleep((long) Math.pow(2, attempt - 1) * 1000);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("AI服务调用被中断");
+        } finally {
+            if (acquired) {
+                aiSemaphore.release();
             }
         }
         log.error("AI调用全部失败, maxRetries={}", maxRetries, lastException);
@@ -139,12 +161,45 @@ public class AIService {
      * AI提取关键信息摘要
      */
     public String extractKeyInfo(String documentContent) {
-        String systemPrompt = "你是文档信息提取专家。请从文档中提取以下关键信息：\n"
-                + "1. 文档类型（通知、报告、合同、简历等）\n"
+        String systemPrompt = "你是一名高效精准的文档信息提取专家。请从文档中快速提取以下关键信息，以结构化格式输出：\n"
+                + "1. 文档类型（通知、报告、公报、合同、简历、统计数据等）\n"
                 + "2. 文档主题/标题\n"
-                + "3. 关键实体（人名、机构名、日期、金额等）\n"
-                + "4. 核心内容摘要（100字以内）\n\n"
-                + "请以清晰的结构化格式输出。";
+                + "3. 关键实体（人名、机构名、地名等）\n"
+                + "4. 关键数值数据（日期、金额、百分比、统计数字等，保留原始数值和单位）\n"
+                + "5. 核心内容摘要（200字以内，涵盖文档主旨和要点）\n\n"
+                + "要求：\n"
+                + "- 信息必须来自文档原文，不得编造\n"
+                + "- 数字数据务必精确，保留原文格式\n"
+                + "- 以清晰分类的结构化格式输出\n"
+                + "- 输出要全面但精炼，便于后续数据检索和表格填写";
         return chat(systemPrompt, documentContent);
+    }
+
+    /**
+     * AI从原始文档文本中提取结构化信息（用于文档上传时自动提取）
+     * 优化提取速度和准确率，提取最全面最简洁的信息
+     */
+    public String extractDocumentInfo(String rawText, String filename) {
+        // 截断过长文本以加快AI处理速度
+        String processedText = rawText;
+        if (rawText.length() > 12000) {
+            processedText = rawText.substring(0, 12000) + "\n...(内容已截断)";
+        }
+
+        String systemPrompt = "你是高精度文档信息提取引擎。请从文档原文中提取所有关键数据和信息，输出结构化摘要。\n\n"
+                + "提取规则：\n"
+                + "1. 提取所有数值型数据（统计数字、金额、百分比、年份、日期等），保留精确数值和单位\n"
+                + "2. 提取所有实体信息（机构名称、人名、地名、项目名等）\n"
+                + "3. 提取关键事实和结论\n"
+                + "4. 保持数据的上下文关联（如：某指标=某数值）\n"
+                + "5. 输出格式清晰、分类明确，便于后续自动匹配和表格填写\n\n"
+                + "输出格式要求：\n"
+                + "- 使用分类标题组织信息\n"
+                + "- 每条信息独立一行\n"
+                + "- 数值数据格式：指标名称：数值 单位\n"
+                + "- 不要输出无关说明，只输出提取的信息";
+
+        String userMessage = "文档名：" + filename + "\n\n文档原文：\n" + processedText;
+        return chat(systemPrompt, userMessage);
     }
 }
