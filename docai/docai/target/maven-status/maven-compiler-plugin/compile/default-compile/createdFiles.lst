@@ -1,3 +1,4 @@
+com\team\docai\controller\DocumentController.class
 com\team\docai\common\Result.class
 com\team\docai\controller\AIController.class
 com\team\docai\service\AutoFillService.class
