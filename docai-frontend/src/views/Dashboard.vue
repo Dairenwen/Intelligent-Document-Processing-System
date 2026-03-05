@@ -227,6 +227,7 @@ onMounted(async () => {
 .welcome-actions .el-button:not(.el-button--primary) {
   color: white;
   border-color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .welcome-illustration {

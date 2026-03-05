@@ -103,7 +103,12 @@
         <el-table-column label="操作" width="280" align="center" fixed="right">
           <template #default="{ row }">
             <el-button-group>
-              <el-tooltip content="AI对话分析">
+              <el-tooltip content="文件预览">
+                <el-button size="small" type="warning" plain @click="viewContent(row)" :disabled="!row.contentText">
+                  <el-icon><View /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="前往AI对话分析">
                 <el-button size="small" type="primary" plain @click="goChat(row)">
                   <el-icon><ChatLineRound /></el-icon>
                 </el-button>
@@ -111,11 +116,6 @@
               <el-tooltip content="AI信息提取">
                 <el-button size="small" type="success" plain @click="extractInfo(row)">
                   <el-icon><DataAnalysis /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip content="查看提取内容">
-                <el-button size="small" type="warning" plain @click="viewContent(row)" :disabled="!row.contentText">
-                  <el-icon><View /></el-icon>
                 </el-button>
               </el-tooltip>
               <el-tooltip content="下载">

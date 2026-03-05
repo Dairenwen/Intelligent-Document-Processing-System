@@ -28,7 +28,7 @@
             </div>
           </div>
           <div v-else class="no-doc-tip">
-            <el-button size="small" type="primary" plain @click="showDocPicker = true">
+            <el-button size="small" type="primary" plain class="select-doc-btn" @click="showDocPicker = true">
               <el-icon><FolderOpened /></el-icon> 选择文档关联
             </el-button>
             <p class="tip-text">关联文档后可基于文档内容进行问答和编辑</p>
@@ -599,10 +599,15 @@ const scrollToBottom = async () => {
   padding: 16px 0;
 }
 
-.tip-text {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 8px;
+.select-doc-btn {
+  background: rgba(79, 70, 229, 0.1) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+  font-weight: 500;
+}
+
+.select-doc-btn:hover {
+  background: rgba(79, 70, 229, 0.2) !important;
 }
 
 /* Document commands */
@@ -770,7 +775,7 @@ const scrollToBottom = async () => {
 }
 
 .message-wrapper.user {
-  flex-direction: row-reverse;
+  justify-content: flex-end;
 }
 
 .ai-avatar {

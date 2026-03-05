@@ -24,7 +24,7 @@
           <div class="source-info-inner">
             <el-icon :size="20" color="#4F46E5"><InfoFilled /></el-icon>
             <span>数据库中已有 <strong>{{ docCount }}</strong> 个文档可用作数据源（其中 <strong>{{ extractedCount }}</strong> 个已成功提取内容）</span>
-            <el-button size="small" type="primary" link @click="$router.push('/documents')">管理文档 →</el-button>
+            <el-button size="small" type="primary" plain class="manage-docs-btn" @click="$router.push('/documents')">管理文档</el-button>
           </div>
           <div v-if="extractedCount === 0" class="source-warning">
             <el-icon color="#E65100"><WarningFilled /></el-icon>
@@ -614,5 +614,16 @@ onMounted(loadStats)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.manage-docs-btn {
+  background: rgba(79, 70, 229, 0.1) !important;
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+  font-weight: 500;
+}
+
+.manage-docs-btn:hover {
+  background: rgba(79, 70, 229, 0.2) !important;
 }
 </style>
