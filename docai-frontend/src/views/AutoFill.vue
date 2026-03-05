@@ -3,84 +3,33 @@
     <!-- 步骤条 -->
     <div class="steps-header card">
       <el-steps :active="currentStep" align-center finish-status="success">
-        <el-step title="选择源文档" description="选择已上传的数据源文档" />
         <el-step title="上传模板" description="上传Word/Excel模板文件" />
-        <el-step title="智能填充" description="AI自动提取数据并填充" />
-        <el-step title="下载结果" description="下载填充后的文件" />
+        <el-step title="智能填充" description="AI自动匹配数据库文档数据" />
+        <el-step title="结果预览" description="预览/下载填充结果" />
       </el-steps>
     </div>
 
-    <!-- Step 1: 选择源文档 -->
+    <!-- Step 1: 上传模板 -->
     <div v-if="currentStep === 0" class="step-content">
       <div class="step-panel card">
         <div class="panel-header">
           <div>
-            <h3>📂 选择源文档</h3>
-            <p class="hint">选择已上传的文档作为数据源，AI将从中提取信息来填充模板</p>
-          </div>
-          <el-button type="primary" @click="showUploadDialog = true">
-            <el-icon><UploadFilled /></el-icon> 上传新文档
-          </el-button>
-        </div>
-        <div class="doc-selector">
-          <div class="search-bar">
-            <el-input v-model="searchKeyword" placeholder="搜索文档..." clearable>
-              <template #prefix><el-icon><Search /></el-icon></template>
-            </el-input>
-            <el-radio-group v-model="filterType" size="small">
-              <el-radio-button label="">全部</el-radio-button>
-              <el-radio-button label="docx">Word</el-radio-button>
-              <el-radio-button label="xlsx">Excel</el-radio-button>
-              <el-radio-button label="txt">TXT</el-radio-button>
-              <el-radio-button label="md">MD</el-radio-button>
-            </el-radio-group>
-          </div>
-
-          <div class="doc-list" v-loading="loadingDocs">
-            <el-empty v-if="filteredDocs.length === 0" description="暂无文档，请先上传" />
-            <div
-              v-for="doc in filteredDocs"
-              :key="doc.id"
-              class="doc-item"
-              :class="{ selected: selectedDocIds.includes(doc.id) }"
-              @click="toggleDoc(doc.id)"
-            >
-              <el-checkbox :model-value="selectedDocIds.includes(doc.id)" @click.stop="toggleDoc(doc.id)" />
-              <div class="doc-type-icon">
-                <span v-if="doc.fileType === 'docx'">📘</span>
-                <span v-else-if="doc.fileType === 'xlsx'">📊</span>
-                <span v-else-if="doc.fileType === 'md'">📝</span>
-                <span v-else>📄</span>
-              </div>
-              <div class="doc-item-info">
-                <span class="doc-name">{{ doc.title }}</span>
-                <span class="doc-meta">{{ formatSize(doc.fileSize) }} · {{ formatDate(doc.createdAt) }}</span>
-              </div>
-              <el-tag size="small" :type="typeTagMap[doc.fileType] || 'info'" effect="plain">
-                {{ doc.fileType?.toUpperCase() }}
-              </el-tag>
-            </div>
-          </div>
-
-          <div class="select-summary">
-            <span>已选择 <strong>{{ selectedDocIds.length }}</strong> 个源文档</span>
-            <el-button type="primary" :disabled="selectedDocIds.length === 0" @click="currentStep = 1">
-              下一步：上传模板 <el-icon><ArrowRight /></el-icon>
-            </el-button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Step 2: 上传模板 -->
-    <div v-if="currentStep === 1" class="step-content">
-      <div class="step-panel card">
-        <div class="panel-header">
-          <div>
             <h3>📋 上传模板文件</h3>
-            <p class="hint">支持 .docx 和 .xlsx 格式的模板文件，模板中可使用 <code v-pre>{{字段名}}</code> 作为占位符</p>
+            <p class="hint">上传模板后，系统将自动从数据库中匹配已上传的文档数据进行智能填充</p>
           </div>
-          <el-button @click="currentStep = 0"><el-icon><ArrowLeft /></el-icon> 返回</el-button>
+        </div>
+
+        <!-- 数据源提示 -->
+        <div class="source-info" v-loading="loadingStats">
+          <div class="source-info-inner">
+            <el-icon :size="20" color="#4F46E5"><InfoFilled /></el-icon>
+            <span>数据库中已有 <strong>{{ docCount }}</strong> 个文档可用作数据源（其中 <strong>{{ extractedCount }}</strong> 个已成功提取内容）</span>
+            <el-button size="small" type="primary" link @click="$router.push('/documents')">管理文档 →</el-button>
+          </div>
+          <div v-if="extractedCount === 0" class="source-warning">
+            <el-icon color="#E65100"><WarningFilled /></el-icon>
+            <span>暂无已提取数据的文档，请先前往文档管理页面上传并提取文档内容</span>
+          </div>
         </div>
 
         <div class="template-upload-area">
@@ -107,21 +56,21 @@
           <ul>
             <li>Word模板：在需要填写的位置使用 <code v-pre>{{字段名}}</code> 占位符，或留空表格单元格</li>
             <li>Excel模板：第一行作为表头，下方空单元格将根据表头名称自动填充</li>
-            <li>AI会自动识别模板结构并从源文档中提取匹配数据</li>
+            <li>AI 会自动识别模板中的待填字段，并从数据库中所有已提取的文档中匹配数据</li>
           </ul>
         </div>
 
         <div class="select-summary">
           <span>已选择 <strong>{{ templateFiles.length }}</strong> 个模板文件</span>
-          <el-button type="primary" :disabled="templateFiles.length === 0" @click="startFill">
+          <el-button type="primary" :disabled="templateFiles.length === 0 || extractedCount === 0" @click="startFill">
             <el-icon><MagicStick /></el-icon> 开始智能填充
           </el-button>
         </div>
       </div>
     </div>
 
-    <!-- Step 3: 填充进度 -->
-    <div v-if="currentStep === 2" class="step-content">
+    <!-- Step 2: 填充进度 -->
+    <div v-if="currentStep === 1" class="step-content">
       <div class="step-panel card">
         <div class="panel-header">
           <h3>🤖 AI 正在智能填充...</h3>
@@ -134,19 +83,19 @@
             </div>
           </div>
           <div class="progress-info">
-            <el-progress :percentage="fillProgress" :stroke-width="8" color="#4F46E5" />
+            <el-progress :percentage="Math.min(fillProgress, 100)" :stroke-width="8" color="#4F46E5" />
             <p class="progress-text">{{ progressText }}</p>
-            <p class="progress-detail">源文档: {{ selectedDocIds.length }} 个 | 模板: {{ templateFiles.length }} 个</p>
+            <p class="progress-detail">数据源: {{ extractedCount }} 个文档 | 模板: {{ templateFiles.length }} 个</p>
           </div>
           <div class="progress-steps">
             <div class="p-step" :class="{ done: fillPhase >= 1, active: fillPhase === 0 }">
-              <div class="p-dot"></div><span>解析源文档</span>
+              <div class="p-dot"></div><span>读取数据库文档</span>
             </div>
             <div class="p-step" :class="{ done: fillPhase >= 2, active: fillPhase === 1 }">
               <div class="p-dot"></div><span>分析模板结构</span>
             </div>
             <div class="p-step" :class="{ done: fillPhase >= 3, active: fillPhase === 2 }">
-              <div class="p-dot"></div><span>AI提取数据</span>
+              <div class="p-dot"></div><span>AI提取匹配数据</span>
             </div>
             <div class="p-step" :class="{ done: fillPhase >= 4, active: fillPhase === 3 }">
               <div class="p-dot"></div><span>填充模板</span>
@@ -156,71 +105,66 @@
       </div>
     </div>
 
-    <!-- Step 4: 结果 -->
-    <div v-if="currentStep === 3" class="step-content">
+    <!-- Step 3: 结果 -->
+    <div v-if="currentStep === 2" class="step-content">
       <div class="step-panel card">
         <div class="panel-header">
-          <h3>✅ 填充完成</h3>
+          <div>
+            <h3>{{ fillError ? '❌ 填充失败' : '✅ 填充完成' }}</h3>
+          </div>
+          <el-button @click="resetAll">
+            <el-icon><RefreshRight /></el-icon> 继续填表
+          </el-button>
         </div>
         <div class="result-area">
-          <div class="result-success" v-if="fillResult">
+          <div class="result-success" v-if="fillResult && !fillError">
             <div class="result-icon">🎉</div>
             <h4>智能填表已完成！</h4>
-            <p>耗时: {{ fillTimeDisplay }}</p>
-            <div class="result-actions">
+            <p>耗时: {{ fillTimeDisplay }}，已使用 {{ extractedCount }} 个文档数据源</p>
+            <div class="result-file-list" v-if="resultFiles.length > 0">
+              <div class="result-file-item" v-for="(f, i) in resultFiles" :key="i">
+                <span class="rf-icon">{{ f.name.endsWith('.xlsx') ? '📊' : '📘' }}</span>
+                <span class="rf-name">{{ f.name }}</span>
+                <el-button size="small" type="primary" @click="downloadSingleResult(f)">
+                  <el-icon><Download /></el-icon> 下载
+                </el-button>
+              </div>
+            </div>
+            <div class="result-actions" v-else>
               <el-button type="primary" size="large" @click="downloadResult">
                 <el-icon><Download /></el-icon> 下载填充结果
               </el-button>
-              <el-button size="large" @click="resetAll">继续填表</el-button>
             </div>
           </div>
           <div class="result-error" v-if="fillError">
             <div class="result-icon">❌</div>
             <h4>填充失败</h4>
             <p>{{ fillError }}</p>
-            <el-button type="primary" @click="currentStep = 1">重试</el-button>
+            <el-button type="primary" @click="currentStep = 0">重新选择模板</el-button>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- 上传文档弹窗 -->
-    <el-dialog v-model="showUploadDialog" title="上传源文档" width="520px">
-      <el-upload
-        drag
-        multiple
-        action="/api/documents/upload"
-        :on-success="onDocUploadSuccess"
-        :before-upload="beforeDocUpload"
-        accept=".docx,.xlsx,.txt,.md"
-      >
-        <el-icon :size="48" class="el-icon--upload"><UploadFilled /></el-icon>
-        <div class="el-upload__text">拖拽文件到此处，或 <em>点击上传</em></div>
-        <template #tip>
-          <div class="el-upload__tip">支持 .docx / .xlsx / .txt / .md 格式，单个文件不超过100MB</div>
-        </template>
-      </el-upload>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { getDocuments, autoFillSingle, autoFillBatch, downloadBlob } from '../api'
+import { useRouter } from 'vue-router'
+import { getDocuments, autoFillAuto, autoFillAutoBatch, downloadBlob } from '../api'
 import { ElMessage } from 'element-plus'
 import {
-  Search, UploadFilled, ArrowRight, ArrowLeft, MagicStick, Download
+  UploadFilled, MagicStick, Download, InfoFilled, WarningFilled, RefreshRight
 } from '@element-plus/icons-vue'
+
+const router = useRouter()
 
 // State
 const currentStep = ref(0)
-const loadingDocs = ref(false)
-const documents = ref([])
-const selectedDocIds = ref([])
 const templateFiles = ref([])
-const searchKeyword = ref('')
-const filterType = ref('')
-const showUploadDialog = ref(false)
+const loadingStats = ref(false)
+const docCount = ref(0)
+const extractedCount = ref(0)
 
 // Fill state
 const fillProgress = ref(0)
@@ -229,17 +173,7 @@ const progressText = ref('准备中...')
 const fillResult = ref(null)
 const fillError = ref('')
 const fillTimeMs = ref(0)
-
-const typeTagMap = { docx: 'primary', xlsx: 'success', txt: 'info', md: 'warning' }
-
-const filteredDocs = computed(() => {
-  return documents.value.filter(doc => {
-    const matchKeyword = !searchKeyword.value ||
-      doc.title?.toLowerCase().includes(searchKeyword.value.toLowerCase())
-    const matchType = !filterType.value || doc.fileType === filterType.value
-    return matchKeyword && matchType
-  })
-})
+const resultFiles = ref([])
 
 const fillTimeDisplay = computed(() => {
   if (fillTimeMs.value < 1000) return fillTimeMs.value + 'ms'
@@ -247,24 +181,17 @@ const fillTimeDisplay = computed(() => {
 })
 
 // Methods
-const loadDocuments = async () => {
-  loadingDocs.value = true
+const loadStats = async () => {
+  loadingStats.value = true
   try {
-    const res = await getDocuments({ size: 100 })
-    documents.value = res.data?.records || []
+    const res = await getDocuments({ size: 500 })
+    const docs = res.data?.records || []
+    docCount.value = docs.length
+    extractedCount.value = docs.filter(d => d.contentText && d.contentText.trim()).length
   } catch (e) {
-    ElMessage.error('加载文档列表失败')
+    console.error('加载文档统计失败', e)
   } finally {
-    loadingDocs.value = false
-  }
-}
-
-const toggleDoc = (id) => {
-  const idx = selectedDocIds.value.indexOf(id)
-  if (idx >= 0) {
-    selectedDocIds.value.splice(idx, 1)
-  } else {
-    selectedDocIds.value.push(id)
+    loadingStats.value = false
   }
 }
 
@@ -277,49 +204,35 @@ const handleTemplateRemove = (file) => {
   if (idx >= 0) templateFiles.value.splice(idx, 1)
 }
 
-const beforeDocUpload = (file) => {
-  const validExts = ['.docx', '.xlsx', '.txt', '.md']
-  const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
-  if (!validExts.includes(ext)) {
-    ElMessage.error('不支持的文件格式: ' + ext)
-    return false
-  }
-  return true
-}
-
-const onDocUploadSuccess = () => {
-  ElMessage.success('上传成功')
-  loadDocuments()
-}
-
 const startFill = async () => {
-  currentStep.value = 2
+  currentStep.value = 1
   fillProgress.value = 0
   fillPhase.value = 0
   fillResult.value = null
   fillError.value = ''
+  resultFiles.value = []
+  progressText.value = '正在读取数据库文档数据...'
 
   // 模拟进度
   const progressTimer = setInterval(() => {
     if (fillProgress.value < 90) {
-      fillProgress.value += Math.random() * 8
-      if (fillProgress.value > 25 && fillPhase.value < 1) { fillPhase.value = 1; progressText.value = '分析模板结构...' }
-      if (fillProgress.value > 50 && fillPhase.value < 2) { fillPhase.value = 2; progressText.value = 'AI正在提取数据...' }
-      if (fillProgress.value > 75 && fillPhase.value < 3) { fillPhase.value = 3; progressText.value = '填充模板中...' }
+      fillProgress.value += Math.random() * 6
+      if (fillProgress.value > 20 && fillPhase.value < 1) { fillPhase.value = 1; progressText.value = '分析模板结构...' }
+      if (fillProgress.value > 45 && fillPhase.value < 2) { fillPhase.value = 2; progressText.value = 'AI正在提取匹配数据...' }
+      if (fillProgress.value > 70 && fillPhase.value < 3) { fillPhase.value = 3; progressText.value = '填充模板中...' }
     }
-  }, 500)
+  }, 600)
 
   try {
     const formData = new FormData()
-    selectedDocIds.value.forEach(id => formData.append('sourceDocIds', id))
-
     let response
+
     if (templateFiles.value.length === 1) {
       formData.append('template', templateFiles.value[0].raw)
-      response = await autoFillSingle(formData)
+      response = await autoFillAuto(formData)
     } else {
       templateFiles.value.forEach(f => formData.append('templates', f.raw))
-      response = await autoFillBatch(formData)
+      response = await autoFillAutoBatch(formData)
     }
 
     clearInterval(progressTimer)
@@ -330,13 +243,28 @@ const startFill = async () => {
     fillTimeMs.value = parseInt(response.headers?.['x-fill-time-ms'] || '0')
     fillResult.value = response.data
 
-    setTimeout(() => { currentStep.value = 3 }, 800)
+    // 构建结果文件列表
+    if (templateFiles.value.length === 1) {
+      resultFiles.value = [{
+        name: 'filled_' + (templateFiles.value[0]?.name || 'result'),
+        blob: response.data
+      }]
+    }
+
+    setTimeout(() => { currentStep.value = 2 }, 800)
 
   } catch (e) {
     clearInterval(progressTimer)
-    fillError.value = e.response?.data?.message || e.message || '填充失败，请重试'
+    // Blob响应无法直接读取message，需要解析
+    let errMsg = e.message || '填充失败，请重试'
+    if (e.response?.data instanceof Blob) {
+      try { errMsg = await e.response.data.text() } catch (_) {}
+    } else if (e.response?.data?.message) {
+      errMsg = e.response.data.message
+    }
+    fillError.value = errMsg
     fillProgress.value = 0
-    currentStep.value = 3
+    currentStep.value = 2
     ElMessage.error('填充失败: ' + fillError.value)
   }
 }
@@ -349,26 +277,23 @@ const downloadResult = () => {
   ElMessage.success('下载成功')
 }
 
+const downloadSingleResult = (f) => {
+  downloadBlob(new Blob([f.blob]), f.name)
+  ElMessage.success('下载成功')
+}
+
 const resetAll = () => {
   currentStep.value = 0
-  selectedDocIds.value = []
   templateFiles.value = []
   fillResult.value = null
   fillError.value = ''
   fillProgress.value = 0
   fillPhase.value = 0
+  resultFiles.value = []
+  loadStats()
 }
 
-const formatSize = (size) => {
-  if (!size) return '-'
-  if (size < 1024) return size + ' B'
-  if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'
-  return (size / 1024 / 1024).toFixed(1) + ' MB'
-}
-
-const formatDate = (d) => d ? d.split('T')[0] : '-'
-
-onMounted(loadDocuments)
+onMounted(loadStats)
 </script>
 
 <style scoped>
@@ -415,85 +340,44 @@ onMounted(loadDocuments)
   margin-top: 4px;
 }
 
-/* Document selector */
-.doc-selector {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 16px 28px;
-  overflow: hidden;
-}
-
-.search-bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.search-bar .el-input {
-  max-width: 320px;
-}
-
-.doc-list {
-  flex: 1;
-  overflow-y: auto;
-  border: 1px solid var(--border-light);
+/* Source info banner */
+.source-info {
+  margin: 16px 28px 0;
+  padding: 14px 18px;
+  background: rgba(79, 70, 229, 0.04);
+  border: 1px solid rgba(79, 70, 229, 0.15);
   border-radius: var(--radius-md);
-  padding: 8px;
 }
 
-.doc-item {
+.source-info-inner {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  border: 2px solid transparent;
-}
-
-.doc-item:hover {
-  background: var(--bg-base);
-}
-
-.doc-item.selected {
-  background: var(--primary-lighter);
-  border-color: var(--primary-light);
-}
-
-.doc-type-icon {
-  font-size: 24px;
-  width: 32px;
-  text-align: center;
-}
-
-.doc-item-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.doc-name {
-  display: block;
+  gap: 10px;
   font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-secondary);
 }
 
-.doc-meta {
-  font-size: 12px;
-  color: var(--text-muted);
+.source-info-inner strong {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.source-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(230, 81, 0, 0.3);
+  font-size: 13px;
+  color: #E65100;
 }
 
 .select-summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 0 8px;
+  padding: 16px 28px 20px;
   border-top: 1px solid var(--border-light);
   margin-top: 12px;
   font-size: 14px;
@@ -670,7 +554,7 @@ onMounted(loadDocuments)
 
 /* Result */
 .result-area {
-  padding: 60px 28px;
+  padding: 48px 28px;
   text-align: center;
 }
 
@@ -697,5 +581,38 @@ onMounted(loadDocuments)
   display: flex;
   gap: 12px;
   justify-content: center;
+}
+
+.result-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 480px;
+  margin: 0 auto 24px;
+  text-align: left;
+}
+
+.result-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.rf-icon {
+  font-size: 24px;
+}
+
+.rf-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

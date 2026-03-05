@@ -32,10 +32,12 @@ public class AutoFillController {
     @PostMapping("/single")
     public ResponseEntity<byte[]> fillSingle(
             @RequestParam("template") MultipartFile templateFile,
-            @RequestParam("sourceDocIds") List<Long> sourceDocIds) {
+            @RequestParam(value = "sourceDocIds", required = false) List<Long> sourceDocIds) {
         try {
             long start = System.currentTimeMillis();
-            byte[] filledBytes = autoFillService.autoFill(sourceDocIds, templateFile);
+            byte[] filledBytes = (sourceDocIds != null && !sourceDocIds.isEmpty())
+                    ? autoFillService.autoFill(sourceDocIds, templateFile)
+                    : autoFillService.autoFillFromAllDocs(templateFile);
             long elapsed = System.currentTimeMillis() - start;
 
             String originalName = templateFile.getOriginalFilename();
@@ -64,11 +66,13 @@ public class AutoFillController {
     @PostMapping("/batch")
     public ResponseEntity<byte[]> fillBatch(
             @RequestParam("templates") List<MultipartFile> templateFiles,
-            @RequestParam("sourceDocIds") List<Long> sourceDocIds) {
+            @RequestParam(value = "sourceDocIds", required = false) List<Long> sourceDocIds) {
         try {
             long start = System.currentTimeMillis();
 
-            Map<String, byte[]> results = autoFillService.batchAutoFill(sourceDocIds, templateFiles);
+            Map<String, byte[]> results = (sourceDocIds != null && !sourceDocIds.isEmpty())
+                    ? autoFillService.batchAutoFill(sourceDocIds, templateFiles)
+                    : autoFillService.batchAutoFillFromAllDocs(templateFiles);
 
             if (results.isEmpty()) {
                 return ResponseEntity.badRequest()
@@ -92,6 +96,74 @@ public class AutoFillController {
 
         } catch (Exception e) {
             log.error("批量自动填充失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(("批量填充失败: " + e.getMessage()).getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * 自动填充（自动模式）- 无需指定源文档，自动使用数据库中所有已提取数据的文档
+     * 上传模板文件 → 系统自动从DB中读取已有文档数据 → 返回填充后的文件
+     */
+    @PostMapping("/auto")
+    public ResponseEntity<byte[]> fillAuto(
+            @RequestParam("template") MultipartFile templateFile) {
+        try {
+            long start = System.currentTimeMillis();
+            byte[] filledBytes = autoFillService.autoFillFromAllDocs(templateFile);
+            long elapsed = System.currentTimeMillis() - start;
+
+            String originalName = templateFile.getOriginalFilename();
+            String outputName = "filled_" + originalName;
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            headers.setContentDisposition(ContentDisposition.attachment()
+                    .filename(URLEncoder.encode(outputName, StandardCharsets.UTF_8)).build());
+            headers.set("X-Fill-Time-Ms", String.valueOf(elapsed));
+
+            log.info("自动填充成功(auto模式): {}, 耗时={}ms", outputName, elapsed);
+            return new ResponseEntity<>(filledBytes, headers, HttpStatus.OK);
+
+        } catch (Exception e) {
+            log.error("自动填充失败(auto模式)", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(("填充失败: " + e.getMessage()).getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * 批量自动填充（自动模式）- 无需指定源文档
+     */
+    @PostMapping("/auto-batch")
+    public ResponseEntity<byte[]> fillAutoBatch(
+            @RequestParam("templates") List<MultipartFile> templateFiles) {
+        try {
+            long start = System.currentTimeMillis();
+
+            Map<String, byte[]> results = autoFillService.batchAutoFillFromAllDocs(templateFiles);
+
+            if (results.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body("所有模板填充均失败".getBytes(StandardCharsets.UTF_8));
+            }
+
+            byte[] zipBytes = createZip(results);
+            long elapsed = System.currentTimeMillis() - start;
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            headers.setContentDisposition(ContentDisposition.attachment()
+                    .filename(URLEncoder.encode("filled_templates.zip", StandardCharsets.UTF_8)).build());
+            headers.set("X-Fill-Time-Ms", String.valueOf(elapsed));
+            headers.set("X-Fill-Count", String.valueOf(results.size()));
+
+            log.info("批量自动填充完成(auto模式): 成功{}/{}个, 耗时={}ms",
+                    results.size(), templateFiles.size(), elapsed);
+            return new ResponseEntity<>(zipBytes, headers, HttpStatus.OK);
+
+        } catch (Exception e) {
+            log.error("批量自动填充失败(auto模式)", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(("批量填充失败: " + e.getMessage()).getBytes(StandardCharsets.UTF_8));
         }

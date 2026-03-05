@@ -63,10 +63,12 @@ public class AIService {
                 if (response != null && response.getData() != null
                         && response.getData().getChoices() != null
                         && !response.getData().getChoices().isEmpty()) {
-                    String content = response.getData().getChoices().get(0)
-                            .getMessage().getContent().toString();
-                    log.info("AI调用成功, attempt={}, responseLength={}", attempt, content.length());
-                    return content;
+                    var choice = response.getData().getChoices().get(0);
+                    if (choice.getMessage() != null && choice.getMessage().getContent() != null) {
+                        String content = choice.getMessage().getContent().toString();
+                        log.info("AI调用成功, attempt={}, responseLength={}", attempt, content.length());
+                        return content;
+                    }
                 }
                 log.warn("AI返回空响应, attempt={}", attempt);
             } catch (Exception e) {

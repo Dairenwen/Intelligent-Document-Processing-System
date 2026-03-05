@@ -8,19 +8,58 @@
       <div class="sidebar-body" v-if="!sidebarCollapsed">
         <div class="sidebar-section">
           <h4>📎 关联文档</h4>
-          <div v-if="docTitle" class="linked-doc">
-            <div class="linked-doc-icon">📘</div>
+          <div v-if="currentDoc" class="linked-doc">
+            <div class="linked-doc-icon">{{ fileIcon(currentDoc.fileType) }}</div>
             <div class="linked-doc-info">
-              <span class="linked-doc-name">{{ docTitle }}</span>
+              <span class="linked-doc-name">{{ currentDoc.title }}</span>
               <el-tag size="small" type="success" effect="plain">已加载</el-tag>
+            </div>
+            <div class="linked-doc-actions">
+              <el-tooltip content="下载文档">
+                <el-button size="small" circle @click="downloadDoc">
+                  <el-icon><Download /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="取消关联">
+                <el-button size="small" circle @click="unlinkDoc">
+                  <el-icon><Close /></el-icon>
+                </el-button>
+              </el-tooltip>
             </div>
           </div>
           <div v-else class="no-doc-tip">
-            <el-empty :image-size="60" description="未关联文档">
-              <el-button size="small" type="primary" plain @click="$router.push('/documents')">去关联</el-button>
-            </el-empty>
+            <el-button size="small" type="primary" plain @click="showDocPicker = true">
+              <el-icon><FolderOpened /></el-icon> 选择文档关联
+            </el-button>
+            <p class="tip-text">关联文档后可基于文档内容进行问答和编辑</p>
           </div>
         </div>
+
+        <!-- 文档操作 -->
+        <div class="sidebar-section" v-if="currentDoc">
+          <h4>🛠️ 文档操作</h4>
+          <div class="doc-commands">
+            <div class="cmd-btn" @click="sendCommand('总结这篇文档的核心内容，提炼关键信息')">
+              <span class="cmd-icon">📋</span><span>内容摘要</span>
+            </div>
+            <div class="cmd-btn" @click="sendCommand('提取文档中所有关键数据，包括数字、日期、人名、机构等实体信息，以结构化形式输出')">
+              <span class="cmd-icon">🔍</span><span>信息提取</span>
+            </div>
+            <div class="cmd-btn" @click="sendCommand('请对文档内容进行润色和优化，使语言更规范流畅，格式更清晰')">
+              <span class="cmd-icon">✏️</span><span>润色优化</span>
+            </div>
+            <div class="cmd-btn" @click="sendCommand('请调整文档的格式结构，优化标题层级、段落划分、列表格式等，使其更加规范')">
+              <span class="cmd-icon">📐</span><span>格式调整</span>
+            </div>
+            <div class="cmd-btn" @click="sendCommand('请分析文档中的数据，给出趋势分析和关键发现')">
+              <span class="cmd-icon">📊</span><span>数据分析</span>
+            </div>
+            <div class="cmd-btn" @click="exportAIResult">
+              <span class="cmd-icon">💾</span><span>导出为Word</span>
+            </div>
+          </div>
+        </div>
+
         <div class="sidebar-section">
           <h4>💡 快捷提问</h4>
           <div class="quick-questions">
@@ -28,7 +67,7 @@
               class="quick-q"
               v-for="q in quickQuestions"
               :key="q"
-              @click="inputText = q; sendMessage()"
+              @click="sendCommand(q)"
             >{{ q }}</div>
           </div>
         </div>
@@ -70,7 +109,7 @@
         <div class="welcome-card" v-if="messages.length <= 1">
           <div class="welcome-icon">🤖</div>
           <h3>欢迎使用 DocAI 智能助手</h3>
-          <p>支持文档分析、内容总结、智能问答等能力</p>
+          <p>支持文档分析、内容总结、智能问答、文档编辑等能力</p>
           <div class="welcome-features">
             <div class="wf-item">
               <span class="wf-icon">📋</span>
@@ -82,7 +121,7 @@
             </div>
             <div class="wf-item">
               <span class="wf-icon">✍️</span>
-              <span>公文撰写、润色与优化</span>
+              <span>文档编辑、润色与格式调整</span>
             </div>
           </div>
         </div>
@@ -91,7 +130,7 @@
           class="message-wrapper"
           v-for="(msg, index) in messages"
           :key="index"
-          :class="msg.role"
+          :class="[msg.role]"
         >
           <!-- AI 消息 -->
           <template v-if="msg.role === 'ai'">
@@ -109,12 +148,17 @@
                     <el-icon :size="14"><CopyDocument /></el-icon>
                   </button>
                 </el-tooltip>
+                <el-tooltip content="导出为Word">
+                  <button class="action-btn" @click="exportContentToWord(msg.content)">
+                    <el-icon :size="14"><Document /></el-icon>
+                  </button>
+                </el-tooltip>
               </div>
             </div>
           </template>
 
           <!-- 用户消息 -->
-          <template v-if="msg.role === 'user'">
+          <template v-else-if="msg.role === 'user'">
             <div class="message-bubble user-bubble">
               <div class="bubble-text">{{ msg.content }}</div>
             </div>
@@ -169,16 +213,41 @@
         </div>
       </div>
     </div>
+
+    <!-- 文档选择弹窗 -->
+    <el-dialog v-model="showDocPicker" title="选择关联文档" width="600px" destroy-on-close>
+      <div class="doc-picker-search">
+        <el-input v-model="docSearchKey" placeholder="搜索文档..." clearable />
+      </div>
+      <div class="doc-picker-list" v-loading="loadingDocList">
+        <el-empty v-if="filteredDocList.length === 0" description="暂无文档" :image-size="60" />
+        <div
+          v-for="doc in filteredDocList"
+          :key="doc.id"
+          class="doc-picker-item"
+          @click="selectDoc(doc)"
+        >
+          <span class="dpi-icon">{{ fileIcon(doc.fileType) }}</span>
+          <div class="dpi-info">
+            <span class="dpi-name">{{ doc.title }}</span>
+            <span class="dpi-meta">{{ doc.fileType?.toUpperCase() }} · {{ formatDate(doc.createdAt) }}</span>
+          </div>
+          <el-tag v-if="doc.contentText" size="small" type="success" effect="plain">已提取</el-tag>
+          <el-tag v-else size="small" type="info" effect="plain">未提取</el-tag>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, computed } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { aiChat, getDocument } from '../api'
+import { aiChat, getDocument, getDocuments, downloadBlob } from '../api'
+import request from '../api/request'
 import { ElMessage } from 'element-plus'
 import {
-  Delete, Position, CopyDocument,
+  Delete, Position, CopyDocument, Document, Download, Close, FolderOpened,
   DArrowLeft, DArrowRight
 } from '@element-plus/icons-vue'
 
@@ -187,19 +256,39 @@ const router = useRouter()
 const messages = ref([])
 const inputText = ref('')
 const loading = ref(false)
-const docTitle = ref('')
 const chatArea = ref(null)
 const inputFocused = ref(false)
 const sidebarCollapsed = ref(false)
-const docId = route.query.docId ? Number(route.query.docId) : null
+
+// Document state
+const currentDoc = ref(null)
+const currentDocId = ref(route.query.docId ? Number(route.query.docId) : null)
+const showDocPicker = ref(false)
+const docSearchKey = ref('')
+const docList = ref([])
+const loadingDocList = ref(false)
+const lastAIContent = ref('')
+
+const fileIcon = (type) => {
+  const map = { docx: '📘', xlsx: '📊', md: '📝', txt: '📄' }
+  return map[type] || '📄'
+}
+
+const formatDate = (d) => d ? d.split('T')[0] : '-'
+
+const filteredDocList = computed(() => {
+  if (!docSearchKey.value) return docList.value
+  const k = docSearchKey.value.toLowerCase()
+  return docList.value.filter(d => d.title?.toLowerCase().includes(k))
+})
 
 const quickQuestions = computed(() => {
-  if (docId) {
+  if (currentDoc.value) {
     return [
       '总结这篇文档的核心内容',
       '提取文档中的关键数据',
-      '这篇文档的写作风格如何？',
-      '帮我优化这篇文档的结构'
+      '帮我优化这篇文档的结构',
+      '分析文档中的数据趋势'
     ]
   }
   return [
@@ -210,27 +299,92 @@ const quickQuestions = computed(() => {
   ]
 })
 
+// Load document by ID
+const loadDocument = async (id) => {
+  if (!id) return
+  try {
+    const res = await getDocument(id)
+    currentDoc.value = res.data
+    currentDocId.value = id
+  } catch (e) {
+    ElMessage.error('文档加载失败: ' + (e.message || '未知错误'))
+    currentDoc.value = null
+    currentDocId.value = null
+  }
+}
+
+// Load document list for picker
+const loadDocList = async () => {
+  loadingDocList.value = true
+  try {
+    const res = await getDocuments({ size: 200 })
+    docList.value = res.data?.records || []
+  } catch (e) {
+    console.error('加载文档列表失败', e)
+  } finally {
+    loadingDocList.value = false
+  }
+}
+
+const selectDoc = async (doc) => {
+  showDocPicker.value = false
+  currentDoc.value = doc
+  currentDocId.value = doc.id
+  messages.value.push({
+    role: 'ai',
+    content: `已关联文档《${doc.title}》。\n\n我可以帮您：\n- 📋 总结文档核心内容\n- 🔍 提取关键信息和数据\n- ✏️ 编辑润色文档\n- 📐 调整文档格式\n- 💬 回答文档相关问题`,
+    _isWelcome: true
+  })
+  await scrollToBottom()
+}
+
+const unlinkDoc = () => {
+  currentDoc.value = null
+  currentDocId.value = null
+  messages.value.push({
+    role: 'ai',
+    content: '已取消文档关联。您可以继续自由对话，或重新选择文档。',
+    _isWelcome: true
+  })
+}
+
+const downloadDoc = () => {
+  if (!currentDocId.value) return
+  window.open(`/api/documents/${currentDocId.value}/download`, '_blank')
+}
+
 onMounted(async () => {
-  if (docId) {
-    try {
-      const res = await getDocument(docId)
-      docTitle.value = res.data.title
+  // Load document list for picker
+  loadDocList()
+
+  if (currentDocId.value) {
+    await loadDocument(currentDocId.value)
+    if (currentDoc.value) {
       messages.value.push({
         role: 'ai',
-        content: `您好，我已加载文档《${docTitle.value}》，您可以向我提问关于这篇文档的任何问题。\n\n我可以帮您：\n- 📋 总结文档核心内容\n- 🔍 提取关键信息和数据\n- ✏️ 优化文档质量\n- 💬 解答文档相关疑问`,
+        content: `您好，我已加载文档《${currentDoc.value.title}》。\n\n我可以帮您：\n- 📋 总结文档核心内容\n- 🔍 提取关键信息和数据\n- ✏️ 编辑润色优化\n- 📐 调整文档格式结构\n- 💬 解答文档相关疑问\n\n您可以直接提问，或使用左侧快捷操作。`,
         _isWelcome: true
       })
-    } catch (e) {
-      ElMessage.error('文档加载失败')
+    } else {
+      messages.value.push({
+        role: 'ai',
+        content: '您好！我是 DocAI 智能助手。文档加载失败，您可以在左侧重新选择文档，或直接与我对话。',
+        _isWelcome: true
+      })
     }
   } else {
     messages.value.push({
       role: 'ai',
-      content: '您好！我是 DocAI 智能助手。我可以帮您撰写公文、分析文档、提取关键信息。请问有什么可以帮您？',
+      content: '您好！我是 DocAI 智能助手。我可以帮您撰写公文、分析文档、提取关键信息、编辑优化文档。\n\n💡 关联文档后可使用更多功能（点击左侧「选择文档关联」）。',
       _isWelcome: true
     })
   }
 })
+
+const sendCommand = (text) => {
+  inputText.value = text
+  sendMessage()
+}
 
 const sendMessage = async () => {
   if (!inputText.value.trim() || loading.value) return
@@ -239,41 +393,85 @@ const sendMessage = async () => {
   messages.value.push({ role: 'user', content: userMsg })
   inputText.value = ''
   loading.value = true
-  scrollToBottom()
+  await scrollToBottom()
 
   try {
-    const res = await aiChat({ message: userMsg, documentId: docId })
-    messages.value.push({ role: 'ai', content: res.data.reply || res.data })
+    const res = await aiChat({ message: userMsg, documentId: currentDocId.value })
+    const reply = res.data?.reply || res.data || ''
+    lastAIContent.value = reply
+    messages.value.push({ role: 'ai', content: reply })
   } catch (err) {
     messages.value.push({
       role: 'ai',
-      content: '⚠️ 抱歉，服务暂时繁忙，请稍后再试。如果问题持续，请检查网络连接。'
+      content: '⚠️ 抱歉，服务暂时繁忙，请稍后再试。如果问题持续，请检查网络连接或后端服务是否启动。'
     })
   } finally {
     loading.value = false
-    scrollToBottom()
+    await scrollToBottom()
+  }
+}
+
+const exportAIResult = async () => {
+  if (!lastAIContent.value) {
+    ElMessage.warning('暂无AI生成内容可导出')
+    return
+  }
+  try {
+    const response = await request.post('/ai/generate-word', {
+      title: currentDoc.value ? currentDoc.value.title + '_AI处理结果' : 'AI_生成内容',
+      content: lastAIContent.value
+    }, { responseType: 'blob' })
+
+    const filename = (currentDoc.value ? currentDoc.value.title + '_AI结果' : 'AI生成内容') + '.docx'
+    downloadBlob(new Blob([response.data]), filename)
+    ElMessage.success('已导出为Word文档')
+  } catch (e) {
+    ElMessage.error('导出失败: ' + (e.message || '未知错误'))
+  }
+}
+
+const exportContentToWord = async (content) => {
+  try {
+    const response = await request.post('/ai/generate-word', {
+      title: 'AI_内容导出',
+      content: content
+    }, { responseType: 'blob' })
+    downloadBlob(new Blob([response.data]), 'AI_内容导出.docx')
+    ElMessage.success('已导出为Word文档')
+  } catch (e) {
+    ElMessage.error('导出失败')
   }
 }
 
 const clearChat = () => {
   messages.value = []
+  lastAIContent.value = ''
   messages.value.push({
     role: 'ai',
-    content: docId
-      ? `对话已重置。请继续提问关于《${docTitle.value}》的内容。`
+    content: currentDoc.value
+      ? `对话已重置。请继续提问关于《${currentDoc.value.title}》的内容。`
       : '对话已重置。请问有什么可以帮您？',
     _isWelcome: true
   })
 }
 
 const copyText = (text) => {
-  navigator.clipboard.writeText(text)
-  ElMessage.success('已复制')
+  navigator.clipboard.writeText(text).then(() => {
+    ElMessage.success('已复制')
+  }).catch(() => {
+    // Fallback for non-HTTPS environments
+    const ta = document.createElement('textarea')
+    ta.value = text
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+    ElMessage.success('已复制')
+  })
 }
 
 const renderMarkdown = (text) => {
   if (!text) return ''
-  // 简易 markdown 渲染
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -286,6 +484,7 @@ const renderMarkdown = (text) => {
 }
 
 const scrollToBottom = async () => {
+  await nextTick()
   await nextTick()
   if (chatArea.value) {
     chatArea.value.scrollTop = chatArea.value.scrollHeight
@@ -306,7 +505,7 @@ const scrollToBottom = async () => {
 
 /* 侧边栏 */
 .chat-sidebar {
-  width: 260px;
+  width: 280px;
   background: var(--bg-card);
   border-right: 1px solid var(--border-light);
   display: flex;
@@ -347,6 +546,7 @@ const scrollToBottom = async () => {
 .sidebar-body {
   padding: 20px;
   overflow-y: auto;
+  flex: 1;
 }
 
 .sidebar-section {
@@ -362,12 +562,13 @@ const scrollToBottom = async () => {
 
 .linked-doc {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   padding: 12px;
   background: rgba(79, 70, 229, 0.05);
   border: 1px solid rgba(79, 70, 229, 0.15);
   border-radius: var(--radius-md);
+  flex-wrap: wrap;
 }
 
 .linked-doc-icon { font-size: 24px; }
@@ -377,6 +578,7 @@ const scrollToBottom = async () => {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  flex: 1;
 }
 
 .linked-doc-name {
@@ -386,6 +588,51 @@ const scrollToBottom = async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.linked-doc-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.no-doc-tip {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.tip-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* Document commands */
+.doc-commands {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.cmd-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cmd-btn:hover {
+  background: rgba(79, 70, 229, 0.06);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.cmd-icon { font-size: 14px; }
 
 .quick-questions {
   display: flex;
@@ -523,7 +770,7 @@ const scrollToBottom = async () => {
 }
 
 .message-wrapper.user {
-  justify-content: flex-end;
+  flex-direction: row-reverse;
 }
 
 .ai-avatar {
@@ -559,6 +806,7 @@ const scrollToBottom = async () => {
   line-height: 1.7;
   position: relative;
   word-break: break-word;
+  min-width: 40px;
 }
 
 .ai-bubble {
@@ -699,6 +947,53 @@ const scrollToBottom = async () => {
   text-align: center;
   padding: 8px 0 0 0;
   font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Document picker dialog */
+.doc-picker-search {
+  margin-bottom: 16px;
+}
+
+.doc-picker-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.doc-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.doc-picker-item:hover {
+  background: rgba(79, 70, 229, 0.05);
+  border-color: rgba(79, 70, 229, 0.15);
+}
+
+.dpi-icon { font-size: 24px; }
+
+.dpi-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.dpi-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dpi-meta {
+  font-size: 12px;
   color: var(--text-muted);
 }
 </style>

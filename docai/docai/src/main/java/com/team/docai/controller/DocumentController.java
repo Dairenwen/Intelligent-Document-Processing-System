@@ -18,6 +18,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 
@@ -38,9 +40,10 @@ public class DocumentController {
 
     /** 上传单个文档 */
     @PostMapping("/upload")
-    public Result<?> upload(@RequestParam("file") MultipartFile file) {
+    public Result<?> upload(@RequestParam("file") MultipartFile file,
+                            @RequestAttribute(value = "userId", required = false) Long userId) {
         try {
-            Document doc = processUpload(file);
+            Document doc = processUpload(file, userId);
             return Result.success(doc);
         } catch (IllegalArgumentException e) {
             return Result.error(e.getMessage());
@@ -52,13 +55,14 @@ public class DocumentController {
 
     /** 批量上传文档 */
     @PostMapping("/upload/batch")
-    public Result<?> batchUpload(@RequestParam("files") List<MultipartFile> files) {
+    public Result<?> batchUpload(@RequestParam("files") List<MultipartFile> files,
+                                 @RequestAttribute(value = "userId", required = false) Long userId) {
         List<Document> uploaded = new ArrayList<>();
         List<String> errors = new ArrayList<>();
 
         for (MultipartFile file : files) {
             try {
-                Document doc = processUpload(file);
+                Document doc = processUpload(file, userId);
                 uploaded.add(doc);
             } catch (Exception e) {
                 String msg = file.getOriginalFilename() + ": " + e.getMessage();
@@ -124,13 +128,14 @@ public class DocumentController {
         if (doc == null) {
             return ResponseEntity.notFound().build();
         }
-        File file = new File(uploadDir + doc.getFilePath());
+        File file = Paths.get(uploadDir).toAbsolutePath().resolve(doc.getFilePath()).toFile();
         if (!file.exists()) {
             return ResponseEntity.notFound().build();
         }
         FileSystemResource resource = new FileSystemResource(file);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + doc.getTitle() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(URLEncoder.encode(doc.getTitle(), StandardCharsets.UTF_8)).build().toString())
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(resource);
     }
@@ -141,7 +146,7 @@ public class DocumentController {
         Document doc = documentMapper.selectById(id);
         if (doc != null) {
             try {
-                new File(uploadDir + doc.getFilePath()).delete();
+                Paths.get(uploadDir).toAbsolutePath().resolve(doc.getFilePath()).toFile().delete();
             } catch (Exception e) {
                 log.warn("删除文件失败: {}", e.getMessage());
             }
@@ -158,7 +163,7 @@ public class DocumentController {
             Document doc = documentMapper.selectById(id);
             if (doc != null) {
                 try {
-                    new File(uploadDir + doc.getFilePath()).delete();
+                    Paths.get(uploadDir).toAbsolutePath().resolve(doc.getFilePath()).toFile().delete();
                 } catch (Exception e) {
                     log.warn("删除文件失败: {}", e.getMessage());
                 }
@@ -189,8 +194,8 @@ public class DocumentController {
 
     // ============ 私有方法 ============
 
-    private Document processUpload(MultipartFile file) throws IOException {
-        Path dir = Paths.get(uploadDir);
+    private Document processUpload(MultipartFile file, Long userId) throws IOException {
+        Path dir = Paths.get(uploadDir).toAbsolutePath();
         if (!Files.exists(dir)) Files.createDirectories(dir);
 
         String originalName = file.getOriginalFilename();
@@ -203,11 +208,7 @@ public class DocumentController {
             throw new IllegalArgumentException("不支持的文件格式: " + ext + "，仅支持: " + SUPPORTED_EXTENSIONS);
         }
 
-        String savedName = UUID.randomUUID() + ext;
-        Path filePath = dir.resolve(savedName);
-        file.transferTo(filePath.toFile());
-
-        // 解析文档内容
+        // 先解析文档内容（transferTo 会使 InputStream 失效，必须先解析）
         String contentText = "";
         try {
             contentText = docParseService.parseDocument(file);
@@ -215,8 +216,13 @@ public class DocumentController {
             log.warn("文档内容解析失败: {}, error={}", originalName, e.getMessage());
         }
 
+        // 再保存文件到磁盘
+        String savedName = UUID.randomUUID() + ext;
+        Path filePath = dir.resolve(savedName);
+        file.transferTo(filePath.toFile());
+
         Document doc = new Document();
-        doc.setUserId(1L);
+        doc.setUserId(userId != null ? userId : 1L);
         doc.setTitle(originalName);
         doc.setFileType(ext.replace(".", ""));
         doc.setFilePath(savedName);

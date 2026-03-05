@@ -1,5 +1,4 @@
 import request from './request'
-import axios from 'axios'
 
 // ==================== 文档管理 ====================
 
@@ -42,27 +41,45 @@ export const aiExtractInfo = (data) => request.post('/ai/extract-info', data)
 
 // ==================== 自动填表 ====================
 
-export const autoFillSingle = (formData, onProgress) =>
-  axios.post('/api/autofill/single', formData, {
+export const autoFillAuto = (formData, onProgress) =>
+  request.post('/autofill/auto', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     responseType: 'blob',
-    timeout: 180000, // 3分钟超时
+    timeout: 180000,
+    onUploadProgress: onProgress
+  })
+
+export const autoFillAutoBatch = (formData, onProgress) =>
+  request.post('/autofill/auto-batch', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    responseType: 'blob',
+    timeout: 600000,
+    onUploadProgress: onProgress
+  })
+
+export const autoFillSingle = (formData, onProgress) =>
+  request.post('/autofill/single', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    responseType: 'blob',
+    timeout: 180000,
     onUploadProgress: onProgress
   })
 
 export const autoFillBatch = (formData, onProgress) =>
-  axios.post('/api/autofill/batch', formData, {
+  request.post('/autofill/batch', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     responseType: 'blob',
-    timeout: 600000, // 10分钟超时
+    timeout: 600000,
     onUploadProgress: onProgress
   })
 
-export const autoFillPreview = (formData) =>
-  request.post('/autofill/preview', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 180000
-  })
+// ==================== 用户认证 ====================
+
+export const authLogin = (data) => request.post('/auth/login', data)
+
+export const authRegister = (data) => request.post('/auth/register', data)
+
+export const getCurrentUser = () => request.get('/auth/me')
 
 // ==================== 工具函数 ====================
 

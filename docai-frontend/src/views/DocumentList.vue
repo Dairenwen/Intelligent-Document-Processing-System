@@ -27,19 +27,9 @@
         <el-button v-if="selectedIds.length > 0" type="danger" plain @click="batchDelete">
           <el-icon><Delete /></el-icon> 删除选中 ({{ selectedIds.length }})
         </el-button>
-        <el-upload
-          :action="uploadAction"
-          multiple
-          :show-file-list="false"
-          :before-upload="beforeUpload"
-          :on-success="handleUploadSuccess"
-          :on-error="handleUploadError"
-          accept=".docx,.xlsx,.txt,.md"
-        >
-          <el-button type="primary">
-            <el-icon><UploadFilled /></el-icon> 上传文档
-          </el-button>
-        </el-upload>
+        <el-button type="primary" @click="showUploadDialog = true">
+          <el-icon><UploadFilled /></el-icon> 上传文档
+        </el-button>
       </div>
     </div>
 
@@ -77,10 +67,20 @@
               <div class="doc-name-wrap">
                 <span class="doc-title">{{ row.title }}</span>
                 <span v-if="row.contentText" class="doc-preview">
-                  {{ row.contentText.substring(0, 60) }}...
+                  {{ row.contentText.substring(0, 80) }}...
                 </span>
               </div>
             </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="提取状态" width="120" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.contentText && row.contentText.length > 0" size="small" type="success" effect="plain" round>
+              ✅ 已提取
+            </el-tag>
+            <el-tag v-else size="small" type="danger" effect="plain" round>
+              ❌ 未提取
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="类型" width="100" align="center">
@@ -100,17 +100,22 @@
             <span class="text-muted">{{ formatDate(row.createdAt) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" align="center" fixed="right">
+        <el-table-column label="操作" width="280" align="center" fixed="right">
           <template #default="{ row }">
             <el-button-group>
-              <el-tooltip content="AI分析">
+              <el-tooltip content="AI对话分析">
                 <el-button size="small" type="primary" plain @click="goChat(row)">
                   <el-icon><ChatLineRound /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-tooltip content="信息提取">
-                <el-button size="small" type="success" plain @click="extractInfo(row)" :loading="row._extracting">
+              <el-tooltip content="AI信息提取">
+                <el-button size="small" type="success" plain @click="extractInfo(row)">
                   <el-icon><DataAnalysis /></el-icon>
+                </el-button>
+              </el-tooltip>
+              <el-tooltip content="查看提取内容">
+                <el-button size="small" type="warning" plain @click="viewContent(row)" :disabled="!row.contentText">
+                  <el-icon><View /></el-icon>
                 </el-button>
               </el-tooltip>
               <el-tooltip content="下载">
@@ -142,11 +147,60 @@
       </div>
     </div>
 
-    <!-- 信息提取弹窗 -->
-    <el-dialog v-model="showInfoDialog" title="📋 AI 关键信息提取" width="600px">
+    <!-- 上传文档弹窗 -->
+    <el-dialog v-model="showUploadDialog" title="📤 上传文档" width="560px" @close="onUploadDialogClose">
+      <div class="upload-area">
+        <el-upload
+          ref="uploadRef"
+          drag
+          multiple
+          :auto-upload="false"
+          :on-change="handleFileChange"
+          :on-remove="handleFileRemove"
+          accept=".docx,.xlsx,.txt,.md"
+          :file-list="uploadFileList"
+        >
+          <el-icon :size="48" class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">将文件拖到此处，或 <em>点击选择</em></div>
+          <template #tip>
+            <div class="el-upload__tip">支持 .docx / .xlsx / .txt / .md 格式，单个文件不超过100MB</div>
+          </template>
+        </el-upload>
+      </div>
+      <div class="upload-info" v-if="uploadFileList.length > 0">
+        <p>已选择 <strong>{{ uploadFileList.length }}</strong> 个文件</p>
+      </div>
+      <template #footer>
+        <el-button @click="showUploadDialog = false">取消</el-button>
+        <el-button type="primary" @click="doUpload" :loading="uploading" :disabled="uploadFileList.length === 0">
+          <el-icon><UploadFilled /></el-icon> 上传并提取信息
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- AI信息提取结果弹窗 -->
+    <el-dialog v-model="showInfoDialog" :title="infoDialogTitle" width="700px">
       <div class="info-result" v-loading="infoLoading">
-        <div class="info-content" v-if="extractedInfo">
-          <pre>{{ extractedInfo }}</pre>
+        <div v-if="!infoLoading && extractedInfo" class="info-content">
+          <div class="info-section" v-if="infoDocTitle">
+            <h4>📄 文档：{{ infoDocTitle }}</h4>
+          </div>
+          <div class="info-section">
+            <pre class="info-text">{{ extractedInfo }}</pre>
+          </div>
+        </div>
+        <el-empty v-if="!infoLoading && !extractedInfo" description="暂无提取信息" />
+      </div>
+    </el-dialog>
+
+    <!-- 查看提取内容弹窗 -->
+    <el-dialog v-model="showContentDialog" title="📋 文档提取内容" width="700px">
+      <div class="content-result">
+        <div class="content-section" v-if="viewDocTitle">
+          <h4>📄 文档：{{ viewDocTitle }}</h4>
+        </div>
+        <div class="content-body">
+          <pre class="content-text">{{ viewDocContent }}</pre>
         </div>
       </div>
     </el-dialog>
@@ -155,12 +209,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getDocuments, deleteDocument, batchDeleteDocuments, aiExtractInfo } from '../api'
+import { getDocuments, deleteDocument, batchDeleteDocuments, aiExtractInfo, uploadDocument } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
   Search, UploadFilled, Download, Delete, ChatLineRound,
-  DataAnalysis, Refresh
+  DataAnalysis, Refresh, View
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -172,11 +226,25 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const selectedIds = ref([])
+
+// 上传相关
+const showUploadDialog = ref(false)
+const uploadFileList = ref([])
+const uploading = ref(false)
+const uploadRef = ref(null)
+
+// 信息提取相关
 const showInfoDialog = ref(false)
 const extractedInfo = ref('')
 const infoLoading = ref(false)
+const infoDialogTitle = ref('📋 AI 关键信息提取')
+const infoDocTitle = ref('')
 
-const uploadAction = '/api/documents/upload'
+// 查看内容
+const showContentDialog = ref(false)
+const viewDocTitle = ref('')
+const viewDocContent = ref('')
+
 const typeTagMap = { docx: 'primary', xlsx: 'success', txt: 'info', md: 'warning' }
 
 const loadDocuments = async () => {
@@ -201,34 +269,73 @@ const handleSelectionChange = (selection) => {
   selectedIds.value = selection.map(item => item.id)
 }
 
-const beforeUpload = (file) => {
+// 文件选择处理
+const handleFileChange = (file, fileList) => {
   const validExts = ['.docx', '.xlsx', '.txt', '.md']
   const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
   if (!validExts.includes(ext)) {
     ElMessage.error('不支持的格式: ' + ext)
-    return false
+    fileList.pop()
+    return
   }
   if (file.size > 100 * 1024 * 1024) {
     ElMessage.error('文件不能超过100MB')
-    return false
+    fileList.pop()
+    return
   }
-  return true
+  uploadFileList.value = fileList
 }
 
-const handleUploadSuccess = () => {
-  ElMessage.success('上传成功')
+const handleFileRemove = (file, fileList) => {
+  uploadFileList.value = fileList
+}
+
+const onUploadDialogClose = () => {
+  uploadFileList.value = []
+  if (uploadRef.value) {
+    uploadRef.value.clearFiles()
+  }
+}
+
+// 执行上传
+const doUpload = async () => {
+  if (uploadFileList.value.length === 0) return
+  uploading.value = true
+  let successCount = 0
+  let failCount = 0
+
+  for (const fileItem of uploadFileList.value) {
+    try {
+      const formData = new FormData()
+      formData.append('file', fileItem.raw)
+      await uploadDocument(formData)
+      successCount++
+    } catch (e) {
+      failCount++
+      console.error('上传失败:', fileItem.name, e)
+    }
+  }
+
+  uploading.value = false
+  if (successCount > 0) {
+    ElMessage.success(`成功上传 ${successCount} 个文档，已自动提取文本信息`)
+  }
+  if (failCount > 0) {
+    ElMessage.warning(`${failCount} 个文档上传失败`)
+  }
+  showUploadDialog.value = false
+  uploadFileList.value = []
   loadDocuments()
-}
-
-const handleUploadError = () => {
-  ElMessage.error('上传失败，请重试')
 }
 
 const goChat = (row) => router.push(`/ai-chat?docId=${row.id}`)
 
 const downloadDoc = (row) => window.open(`/api/documents/${row.id}/download`)
 
+// AI关键信息提取
 const extractInfo = async (row) => {
+  infoDocTitle.value = row.title
+  infoDialogTitle.value = '🤖 AI 关键信息提取 - ' + row.title
   showInfoDialog.value = true
   infoLoading.value = true
   extractedInfo.value = ''
@@ -240,6 +347,13 @@ const extractInfo = async (row) => {
   } finally {
     infoLoading.value = false
   }
+}
+
+// 查看已提取的文档内容
+const viewContent = (row) => {
+  viewDocTitle.value = row.title
+  viewDocContent.value = row.contentText || '暂无提取内容'
+  showContentDialog.value = true
 }
 
 const deleteDoc = async (row) => {
@@ -374,16 +488,71 @@ onMounted(loadDocuments)
   border-top: 1px solid var(--border-light);
 }
 
+/* Upload dialog */
+.upload-area {
+  padding: 10px 0;
+}
+
+.upload-info {
+  padding: 12px 0 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
 /* Info dialog */
 .info-result {
   min-height: 200px;
 }
 
-.info-content pre {
+.info-section {
+  margin-bottom: 16px;
+}
+
+.info-section h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.info-text {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 14px;
   line-height: 1.8;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  padding: 20px;
+  border-radius: var(--radius-md);
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* Content dialog */
+.content-result {
+  min-height: 200px;
+}
+
+.content-section {
+  margin-bottom: 16px;
+}
+
+.content-section h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.content-body {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.content-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.7;
   color: var(--text-primary);
   background: var(--bg-base);
   padding: 20px;

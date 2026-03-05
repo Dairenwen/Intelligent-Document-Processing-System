@@ -12,6 +12,9 @@
           <el-button size="large" plain @click="$router.push('/documents')">
             <el-icon><UploadFilled /></el-icon> 上传文档
           </el-button>
+          <el-button size="large" plain @click="$router.push('/ai-chat')">
+            <el-icon><ChatDotRound /></el-icon> AI 对话
+          </el-button>
         </div>
       </div>
       <div class="welcome-illustration">
@@ -91,10 +94,6 @@
         <el-icon :size="28" color="#10B981"><ChatDotRound /></el-icon>
         <span>AI对话</span>
       </div>
-      <div class="action-card" @click="$router.push('/ai-generate')">
-        <el-icon :size="28" color="#F59E0B"><EditPen /></el-icon>
-        <span>生成公文</span>
-      </div>
     </div>
   </div>
 </template>
@@ -117,29 +116,29 @@ const modules = [
   {
     id: 1,
     name: '文档智能编辑操作交互',
-    desc: '基于自然语言的文档编辑、生成与润色，AI理解指令自动处理公文',
+    desc: '基于自然语言的文档编辑、排版、格式调整、内容提取，AI理解指令自动处理文档',
     route: '/ai-chat',
     tagType: 'primary',
     status: '已就绪',
-    features: ['AI对话', '公文生成', '智能润色', '文档问答']
+    features: ['AI对话', '文档编辑', '格式调整', '内容提取']
   },
   {
     id: 2,
     name: '非结构化文档信息提取',
-    desc: '支持docx/xlsx/txt/md等多格式文档解析，自动提取关键信息',
+    desc: '支持docx/xlsx/txt/md等多格式文档解析，AI自动提取关键信息并存储到数据库',
     route: '/documents',
     tagType: 'success',
     status: '已就绪',
-    features: ['多格式解析', '信息提取', '内容存储', '批量上传']
+    features: ['多格式解析', 'AI信息提取', '实体识别', '数据库存储']
   },
   {
     id: 3,
     name: '表格自动数据填写',
-    desc: '根据源文档数据自动填写Word/Excel模板，高准确率、低延迟',
+    desc: '上传模板文件，系统自动从已提取的文档数据中匹配并填充表格',
     route: '/autofill',
     tagType: 'warning',
     status: '核心功能',
-    features: ['模板识别', '数据提取', '自动填充', '批量处理']
+    features: ['模板识别', '数据匹配', '自动填充', '批量处理']
   }
 ]
 
@@ -389,7 +388,7 @@ onMounted(async () => {
 /* Quick Actions */
 .quick-actions {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 

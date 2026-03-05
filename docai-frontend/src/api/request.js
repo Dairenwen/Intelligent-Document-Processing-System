@@ -9,7 +9,10 @@ const request = axios.create({
 // 请求拦截器
 request.interceptors.request.use(
   config => {
-    // 可在此添加 token 等认证信息
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
     return config
   },
   error => Promise.reject(error)
@@ -39,6 +42,14 @@ request.interceptors.response.use(
       switch (status) {
         case 400:
           ElMessage.error('请求参数错误: ' + msg)
+          break
+        case 401:
+          ElMessage.error('登录已过期，请重新登录')
+          localStorage.removeItem('token')
+          localStorage.removeItem('userId')
+          localStorage.removeItem('username')
+          localStorage.removeItem('nickname')
+          window.location.href = '/login'
           break
         case 413:
           ElMessage.error('上传文件过大')

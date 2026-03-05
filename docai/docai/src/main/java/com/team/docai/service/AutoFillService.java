@@ -31,6 +31,125 @@ public class AutoFillService {
     private String uploadDir;
 
     /**
+     * 自动填表（自动模式）- 从数据库中读取所有已提取数据的文档
+     */
+    public byte[] autoFillFromAllDocs(MultipartFile templateFile) throws Exception {
+        long startTime = System.currentTimeMillis();
+        log.info("开始自动填表(auto模式), 模板文件={}", templateFile.getOriginalFilename());
+
+        // 1. 收集所有已有文档内容
+        String sourceContent = collectAllSourceContent();
+        if (sourceContent.isBlank()) {
+            throw new IllegalStateException("数据库中没有可用的文档数据，请先在文档管理中上传并提取文档");
+        }
+        log.info("所有源文档内容收集完成, 总字符数={}", sourceContent.length());
+
+        // 2. 分析模板结构
+        String templateFilename = templateFile.getOriginalFilename();
+        if (templateFilename == null) templateFilename = "template.docx";
+        String ext = templateFilename.substring(templateFilename.lastIndexOf(".")).toLowerCase();
+        String templateStructure = analyzeTemplate(templateFile, ext);
+        log.info("模板结构分析完成: {}", templateStructure.substring(0, Math.min(200, templateStructure.length())));
+
+        // 3. AI提取结构化数据
+        String processedContent = sourceContent;
+        if (sourceContent.length() > 15000) {
+            processedContent = summarizeContent(sourceContent);
+            log.info("源文档内容已摘要化, 摘要长度={}", processedContent.length());
+        }
+
+        String aiResponse = aiService.extractStructuredData(templateStructure, processedContent);
+        log.info("AI数据提取完成, 响应长度={}", aiResponse.length());
+
+        // 4. 解析AI返回的JSON
+        Map<String, String> extractedData = parseAIResponse(aiResponse);
+        log.info("解析出{}个字段值", extractedData.size());
+
+        // 5. 填充模板
+        byte[] result;
+        try (InputStream templateIs = templateFile.getInputStream()) {
+            if (ext.equals(".docx")) {
+                result = docParseService.fillWordTemplate(templateIs, extractedData);
+            } else if (ext.equals(".xlsx")) {
+                result = docParseService.fillExcelTemplate(templateIs, extractedData);
+            } else {
+                throw new IllegalArgumentException("模板文件格式不支持: " + ext + "，仅支持 .docx 和 .xlsx");
+            }
+        }
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("自动填表(auto模式)完成, 耗时={}ms, 填充字段数={}", elapsed, extractedData.size());
+        return result;
+    }
+
+    /**
+     * 批量自动填表（自动模式）- 无需指定源文档
+     */
+    public Map<String, byte[]> batchAutoFillFromAllDocs(List<MultipartFile> templateFiles) throws Exception {
+        long startTime = System.currentTimeMillis();
+        log.info("开始批量自动填表(auto模式), 模板数={}", templateFiles.size());
+
+        String sourceContent = collectAllSourceContent();
+        if (sourceContent.isBlank()) {
+            throw new IllegalStateException("数据库中没有可用的文档数据，请先在文档管理中上传并提取文档");
+        }
+
+        String processedContent = sourceContent;
+        if (sourceContent.length() > 15000) {
+            processedContent = summarizeContent(sourceContent);
+        }
+
+        Map<String, byte[]> results = new LinkedHashMap<>();
+        for (MultipartFile templateFile : templateFiles) {
+            String filename = templateFile.getOriginalFilename();
+            if (filename == null) filename = "template.docx";
+            try {
+                String ext = filename.substring(filename.lastIndexOf(".")).toLowerCase();
+                String templateStructure = analyzeTemplate(templateFile, ext);
+                String aiResponse = aiService.extractStructuredData(templateStructure, processedContent);
+                Map<String, String> data = parseAIResponse(aiResponse);
+                byte[] filled;
+                try (InputStream is = templateFile.getInputStream()) {
+                    if (ext.equals(".docx")) {
+                        filled = docParseService.fillWordTemplate(is, data);
+                    } else if (ext.equals(".xlsx")) {
+                        filled = docParseService.fillExcelTemplate(is, data);
+                    } else {
+                        log.warn("跳过不支持的模板格式: {}", filename);
+                        continue;
+                    }
+                }
+                results.put(filename, filled);
+                log.info("模板 {} 填充完成(auto模式), 字段数={}", filename, data.size());
+            } catch (Exception e) {
+                log.error("模板 {} 填充失败(auto模式): {}", filename, e.getMessage());
+            }
+        }
+
+        long elapsed = System.currentTimeMillis() - startTime;
+        log.info("批量自动填表(auto模式)完成, 总耗时={}ms, 成功={}/{}", elapsed, results.size(), templateFiles.size());
+        return results;
+    }
+
+    /**
+     * 收集数据库中所有已提取数据的文档内容
+     */
+    private String collectAllSourceContent() {
+        List<Document> allDocs = documentMapper.selectList(null);
+        StringBuilder sb = new StringBuilder();
+        int count = 0;
+        for (Document doc : allDocs) {
+            if (doc.getContentText() != null && !doc.getContentText().isBlank()) {
+                sb.append("\n\n========== 文档: ").append(doc.getTitle()).append(" ==========\n");
+                sb.append(doc.getContentText());
+                count++;
+            }
+        }
+        log.info("从数据库中收集到 {} 个有效文档数据", count);
+        return sb.toString();
+    }
+
+    /**
      * 执行自动填表 - 主入口
      *
      * @param sourceDocIds 源文档ID列表

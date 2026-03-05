@@ -84,16 +84,14 @@
           <el-dropdown trigger="click">
             <div class="user-area">
               <el-avatar :size="34" class="user-avatar">
-                <span style="font-size: 14px;">管</span>
+                <span style="font-size: 14px;">{{ avatarChar }}</span>
               </el-avatar>
-              <span v-if="true" class="user-name">管理员</span>
+              <span class="user-name">{{ nickname }}</span>
               <el-icon class="arrow"><CaretBottom /></el-icon>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item>个人中心</el-dropdown-item>
-                <el-dropdown-item>系统设置</el-dropdown-item>
-                <el-dropdown-item divided>退出登录</el-dropdown-item>
+                <el-dropdown-item @click="handleLogout">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -113,19 +111,23 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Fold, Expand, CaretBottom } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const route = useRoute()
+const router = useRouter()
 const isCollapsed = ref(false)
+
+const nickname = ref(localStorage.getItem('nickname') || '用户')
+const avatarChar = computed(() => nickname.value?.charAt(0) || 'U')
 
 const menuItems = [
   { path: '/dashboard', label: '工作台', icon: 'DataAnalysis' },
   { path: '/documents', label: '文档管理', icon: 'FolderOpened' },
   { path: '/autofill', label: '智能填表', icon: 'Grid', badge: '核心' },
-  { path: '/ai-chat', label: 'AI 对话', icon: 'ChatDotRound' },
-  { path: '/ai-generate', label: '智能写作', icon: 'EditPen' }
+  { path: '/ai-chat', label: 'AI 对话', icon: 'ChatDotRound' }
 ]
 
 const moduleInfo = [
@@ -140,20 +142,37 @@ const titleMap = {
   '/dashboard': '工作台',
   '/documents': '文档管理',
   '/autofill': '智能填表',
-  '/ai-chat': 'AI 智能对话',
-  '/ai-generate': '智能公文写作'
+  '/ai-chat': 'AI 智能对话'
 }
 
 const moduleMap = {
   '/dashboard': '系统总览',
   '/documents': '模块二：非结构化文档信息提取',
   '/autofill': '模块三：表格自动数据填写',
-  '/ai-chat': '模块一：文档智能编辑交互',
-  '/ai-generate': '模块一：文档智能编辑交互'
+  '/ai-chat': '模块一：文档智能编辑交互'
 }
 
 const currentTitle = computed(() => titleMap[route.path] || 'DocAI')
 const currentModule = computed(() => moduleMap[route.path] || '智能文档处理系统')
+
+const handleLogout = () => {
+  ElMessageBox.confirm('确定要退出登录吗？', '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('userId')
+    localStorage.removeItem('username')
+    localStorage.removeItem('nickname')
+    ElMessage.success('已退出登录')
+    router.push('/login')
+  }).catch(() => {})
+}
+
+onMounted(() => {
+  nickname.value = localStorage.getItem('nickname') || '用户'
+})
 </script>
 
 <style scoped>
