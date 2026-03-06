@@ -413,7 +413,6 @@ onMounted(loadStats)
 
 .step-content {
   flex: 1;
-  min-height: 0;
 }
 
 .step-content-with-tips {
@@ -433,7 +432,6 @@ onMounted(loadStats)
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  overflow-y: auto;
 }
 
 .panel-header {

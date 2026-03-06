@@ -47,16 +47,7 @@
     <div
       class="table-wrapper card"
       v-loading="loading"
-      @dragenter.prevent="onListDragEnter"
-      @dragover.prevent="onListDragOver"
-      @dragleave.prevent="onListDragLeave"
-      @drop.prevent="onListDrop"
     >
-      <div v-if="dragActive" class="drop-overlay">
-        <el-icon :size="28"><UploadFilled /></el-icon>
-        <span>拖放到此处上传文档</span>
-      </div>
-
       <el-empty v-if="!loading && documents.length === 0" description="暂无文档，上传你的第一个文件吧" />
       <el-table
         v-else

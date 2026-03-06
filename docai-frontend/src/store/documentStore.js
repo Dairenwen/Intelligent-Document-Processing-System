@@ -65,27 +65,52 @@ export const useDocumentStore = defineStore('documents', {
       }
     },
 
-    // Action to delete a single document
+    // Action to delete a single document with optimistic UI
     async deleteDocument(docId) {
+      const docIndex = this.documents.findIndex(d => d.id === docId)
+      if (docIndex === -1) return
+
+      // Optimistically remove the document from the state
+      const removedDoc = this.documents.splice(docIndex, 1)[0]
+      this.total -= 1
+
       try {
         await apiDeleteDocument(docId)
         ElMessage.success('删除成功')
-        // Invalidate cache and force reload
-        await this.fetchDocuments({ ...this.lastFilters, force: true })
+        // On success, we don't need to do anything, UI is already updated
       } catch (e) {
-        // The UI component will handle the message box, so we just re-throw or handle silently
-        throw e
+        // On failure, revert the change
+        this.documents.splice(docIndex, 0, removedDoc)
+        this.total += 1
+        ElMessage.error('删除失败，请重试')
+        throw e // Re-throw for the component to know about the failure if needed
       }
     },
 
-    // Action to delete multiple documents
+    // Action to delete multiple documents with optimistic UI
     async batchDeleteDocuments(docIds) {
+      const originalDocs = [...this.documents]
+      const removedDocs = []
+      
+      // Optimistically remove documents
+      this.documents = this.documents.filter(doc => {
+        if (docIds.includes(doc.id)) {
+          removedDocs.push(doc)
+          return false
+        }
+        return true
+      })
+      const removedCount = removedDocs.length
+      this.total -= removedCount
+
       try {
         await apiBatchDelete(docIds)
-        ElMessage.success('批量删除成功')
-        // Invalidate cache and force reload
-        await this.fetchDocuments({ ...this.lastFilters, force: true })
+        ElMessage.success(`成功删除 ${removedCount} 个文档`)
       } catch (e) {
+        // On failure, revert the state
+        this.documents = originalDocs
+        this.total += removedCount
+        ElMessage.error('批量删除失败，请重试')
         throw e
       }
     },
