@@ -53,13 +53,32 @@
         </div>
       </nav> -->
 
+      <!-- 浮动字符动画区域 -->
+      <div class="float-chars-area" v-if="!isCollapsed">
+        <span
+          v-for="fc in floatChars"
+          :key="fc.id"
+          class="float-char"
+          :style="{
+            left: fc.left,
+            animationDelay: fc.delay,
+            animationDuration: fc.duration,
+            transform: `rotate(${fc.rotate}deg)`,
+            fontSize: fc.size
+          }"
+        >{{ fc.char }}</span>
+      </div>
+
       <!-- 折叠按钮 -->
       <div class="sidebar-footer">
         <div class="collapse-btn" @click="isCollapsed = !isCollapsed">
-          <el-icon :size="18">
+          <el-icon :size="16">
             <Fold v-if="!isCollapsed" />
             <Expand v-else />
           </el-icon>
+          <transition name="fade">
+            <span v-if="!isCollapsed" class="collapse-label">收起侧栏</span>
+          </transition>
         </div>
       </div>
     </aside>
@@ -120,13 +139,26 @@ const route = useRoute()
 const router = useRouter()
 const isCollapsed = ref(false)
 
+const floatChars = [
+  { id: 1, char: 'D', left: '10%', delay: '0s', duration: '4s', rotate: -15, size: '14px' },
+  { id: 2, char: 'o', left: '30%', delay: '0.8s', duration: '3.5s', rotate: 10, size: '12px' },
+  { id: 3, char: 'c', left: '55%', delay: '1.5s', duration: '4.2s', rotate: -8, size: '13px' },
+  { id: 4, char: 'A', left: '75%', delay: '0.3s', duration: '3.8s', rotate: 20, size: '15px' },
+  { id: 5, char: 'I', left: '90%', delay: '2s', duration: '4.5s', rotate: -12, size: '11px' },
+  { id: 6, char: 'N', left: '20%', delay: '2.5s', duration: '3.6s', rotate: 5, size: '12px' },
+  { id: 7, char: 'L', left: '45%', delay: '1s', duration: '4.1s', rotate: -20, size: '14px' },
+  { id: 8, char: 'P', left: '65%', delay: '3s', duration: '3.9s', rotate: 15, size: '13px' },
+  { id: 9, char: 'e', left: '85%', delay: '1.8s', duration: '4.3s', rotate: -6, size: '11px' },
+  { id: 10, char: 'X', left: '5%', delay: '3.5s', duration: '3.7s', rotate: 25, size: '12px' },
+]
+
 const nickname = ref(localStorage.getItem('nickname') || '用户')
 const avatarChar = computed(() => nickname.value?.charAt(0) || 'U')
 
 const menuItems = [
   { path: '/dashboard', label: '工作台', icon: 'DataAnalysis' },
   { path: '/documents', label: '文档管理', icon: 'FolderOpened' },
-  { path: '/autofill', label: '智能填表', icon: 'Grid', badge: '核心' },
+  { path: '/autofill', label: '智能填表', icon: 'Grid' },
   { path: '/ai-chat', label: 'AI 对话', icon: 'ChatDotRound' }
 ]
 
@@ -359,18 +391,73 @@ onMounted(() => {
 .collapse-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
   width: 100%;
-  padding: 10px;
+  padding: 10px 14px;
   border-radius: var(--radius-md);
   cursor: pointer;
   color: var(--text-muted);
   transition: all var(--transition-fast);
+  font-size: 13px;
+}
+
+.collapse-label {
+  white-space: nowrap;
+  font-weight: 500;
 }
 
 .collapse-btn:hover {
-  background: var(--bg-base);
-  color: var(--text-primary);
+  background: var(--primary-lighter);
+  color: var(--primary);
+}
+
+.collapsed .collapse-btn {
+  justify-content: center;
+  padding: 10px;
+}
+
+/* 浮动字符动画 */
+.float-chars-area {
+  position: relative;
+  flex: 1;
+  min-height: 60px;
+  overflow: hidden;
+  flex-shrink: 1;
+  pointer-events: none;
+}
+
+.float-char {
+  position: absolute;
+  bottom: -20px;
+  font-weight: 700;
+  font-family: 'Consolas', 'Monaco', monospace;
+  opacity: 0;
+  animation: floatUp 4s ease-out infinite;
+}
+
+@keyframes floatUp {
+  0% {
+    opacity: 0;
+    bottom: -20px;
+    color: #4F46E5;
+  }
+  15% {
+    opacity: 0.7;
+    color: #4F46E5;
+  }
+  60% {
+    opacity: 0.5;
+    color: #9b96e3;
+  }
+  90% {
+    opacity: 0.15;
+    color: #e8e8ec;
+  }
+  100% {
+    opacity: 0;
+    bottom: 100%;
+    color: #ffffff;
+  }
 }
 
 /* ============ 主内容区 ============ */

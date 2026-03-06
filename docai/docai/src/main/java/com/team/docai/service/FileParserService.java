@@ -98,44 +98,48 @@ public class FileParserService {
 
     /**
      * 同步解析 - 使用 prime-sync 服务
-     * POST /api/paas/v4/files/parser/sync
-     *
-     * 适用场景：小文件、需要低延迟即时返回结果
-     * 支持格式：pdf,docx,doc,xls,xlsx,ppt,pptx,md,txt,csv,html,...
+     * 先尝试 POST /sync 端点，若失败则回退到异步解析
      */
     private String parseSyncFile(File file, String fileType) {
         String token = generateApiToken();
 
-        HttpResponse response = HttpRequest.post(PARSER_BASE_URL + "/sync")
-                .header("Authorization", "Bearer " + token)
-                .form("file", file)
-                .form("tool_type", "prime-sync")
-                .form("file_type", fileType.toUpperCase())
-                .timeout(120000)  // 2分钟超时
-                .execute();
+        try {
+            HttpResponse response = HttpRequest.post(PARSER_BASE_URL + "/sync")
+                    .header("Authorization", "Bearer " + token)
+                    .form("file", file)
+                    .form("tool_type", "prime-sync")
+                    .form("file_type", fileType.toUpperCase())
+                    .timeout(120000)
+                    .execute();
 
-        String body = response.body();
-        log.debug("同步解析响应: status={}, bodyLength={}",
-                response.getStatus(), body != null ? body.length() : 0);
+            String body = response.body();
+            log.debug("同步解析响应: status={}, bodyLength={}",
+                    response.getStatus(), body != null ? body.length() : 0);
 
-        if (response.getStatus() != 200) {
-            throw new RuntimeException("同步解析HTTP错误: status=" + response.getStatus());
-        }
+            if (response.getStatus() == 200) {
+                JSONObject json = JSONUtil.parseObj(body);
+                String status = json.getStr("status");
 
-        JSONObject json = JSONUtil.parseObj(body);
-        String status = json.getStr("status");
-
-        if ("succeeded".equals(status)) {
-            String content = json.getStr("content");
-            if (content != null && !content.isBlank()) {
-                log.info("同步解析成功: contentLength={}", content.length());
-                return content;
+                if ("succeeded".equals(status)) {
+                    String content = json.getStr("content");
+                    if (content != null && !content.isBlank()) {
+                        log.info("同步解析成功: contentLength={}", content.length());
+                        return content;
+                    }
+                }
             }
-            throw new RuntimeException("同步解析返回空内容");
+            log.warn("同步解析端点未返回成功结果, 尝试异步解析");
+        } catch (Exception e) {
+            log.warn("同步解析端点调用失败, 尝试异步解析: {}", e.getMessage());
         }
 
-        throw new RuntimeException("同步解析失败: status=" + status
-                + ", message=" + json.getStr("message"));
+        // 回退到异步解析
+        try {
+            return parseAsyncFile(file, fileType);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("异步解析被中断", e);
+        }
     }
 
     // ======================== 异步解析 ========================

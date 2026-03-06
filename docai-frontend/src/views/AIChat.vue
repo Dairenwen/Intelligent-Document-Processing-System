@@ -61,7 +61,7 @@
               <el-icon :size="14"><DataAnalysis /></el-icon><span>数据分析</span>
             </div>
             <div class="cmd-btn" @click="exportAIResult">
-              <el-icon :size="14"><Download /></el-icon><span>导出为Word</span>
+              <el-icon :size="14"><Download /></el-icon><span>导出文档</span>
             </div>
           </div>
         </div>
@@ -77,6 +77,42 @@
               :key="q"
               @click="sendCommand(q)"
             >{{ q }}</div>
+          </div>
+        </div>
+
+        <!-- AI 动态效果区域 -->
+        <div class="sidebar-ai-visual">
+          <div class="ai-visual-canvas">
+            <svg viewBox="0 0 200 120" class="neural-svg">
+              <!-- Connecting lines -->
+              <line x1="30" y1="30" x2="100" y2="25" class="nn-line nn-l1" />
+              <line x1="30" y1="60" x2="100" y2="25" class="nn-line nn-l2" />
+              <line x1="30" y1="60" x2="100" y2="60" class="nn-line nn-l3" />
+              <line x1="30" y1="90" x2="100" y2="60" class="nn-line nn-l4" />
+              <line x1="30" y1="90" x2="100" y2="95" class="nn-line nn-l5" />
+              <line x1="30" y1="30" x2="100" y2="60" class="nn-line nn-l6" />
+              <line x1="100" y1="25" x2="170" y2="45" class="nn-line nn-l7" />
+              <line x1="100" y1="60" x2="170" y2="45" class="nn-line nn-l8" />
+              <line x1="100" y1="60" x2="170" y2="80" class="nn-line nn-l9" />
+              <line x1="100" y1="95" x2="170" y2="80" class="nn-line nn-l10" />
+              <!-- Input nodes -->
+              <circle cx="30" cy="30" r="5" class="nn-node nn-input" />
+              <circle cx="30" cy="60" r="5" class="nn-node nn-input" />
+              <circle cx="30" cy="90" r="5" class="nn-node nn-input" />
+              <!-- Hidden nodes -->
+              <circle cx="100" cy="25" r="6" class="nn-node nn-hidden" />
+              <circle cx="100" cy="60" r="6" class="nn-node nn-hidden" />
+              <circle cx="100" cy="95" r="6" class="nn-node nn-hidden" />
+              <!-- Output nodes -->
+              <circle cx="170" cy="45" r="5" class="nn-node nn-output" />
+              <circle cx="170" cy="80" r="5" class="nn-node nn-output" />
+            </svg>
+            <div class="ai-pulse-ring"></div>
+          </div>
+          <div class="ai-visual-label">
+            <span class="avl-en">Neural Processing</span>
+            <span class="avl-dot"></span>
+            <span class="avl-status">Ready</span>
           </div>
         </div>
       </div>
@@ -99,7 +135,7 @@
           </div>
           <div>
             <span class="chat-title-text">AI 智能对话</span>
-            <span class="chat-model-tag">GLM-4-Flash</span>
+            <span class="chat-model-tag">GLM-4.7-Flash</span>
           </div>
         </div>
         <div class="chat-actions">
@@ -165,7 +201,7 @@
                     <el-icon :size="14"><CopyDocument /></el-icon>
                   </button>
                 </el-tooltip>
-                <el-tooltip content="导出为Word">
+                <el-tooltip content="导出文档">
                   <button class="action-btn" @click="exportContentToWord(msg.content)">
                     <el-icon :size="14"><Document /></el-icon>
                   </button>
@@ -231,7 +267,7 @@
           </div>
         </div>
         <div class="input-footer">
-          <span>基于 GLM-4-Flash 大语言模型 -- 内容仅供参考</span>
+          <span>基于 GLM-4.7-Flash 大语言模型 -- 内容仅供参考</span>
         </div>
       </div>
     </div>
@@ -273,6 +309,13 @@ import {
   DArrowLeft, DArrowRight, Link, Setting, Memo, Search, EditPen, SetUp,
   DataAnalysis, Promotion, Upload
 } from '@element-plus/icons-vue'
+import { marked } from 'marked'
+
+// Configure marked for safe rendering
+marked.setOptions({
+  breaks: true,
+  gfm: true
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -489,27 +532,30 @@ const exportAIResult = async () => {
     ElMessage.warning('暂无AI生成内容可导出')
     return
   }
+  const docExt = currentDoc.value?.fileType || 'docx'
+  const baseName = currentDoc.value ? currentDoc.value.title + '_AI结果' : 'AI生成内容'
   try {
     const response = await request.post('/ai/generate-word', {
-      title: currentDoc.value ? currentDoc.value.title + '_AI处理结果' : 'AI_生成内容',
+      title: baseName,
       content: lastAIContent.value
     }, { responseType: 'blob' })
-    const filename = (currentDoc.value ? currentDoc.value.title + '_AI结果' : 'AI生成内容') + '.docx'
-    downloadBlob(new Blob([response.data]), filename)
-    ElMessage.success('已导出为Word文档')
+    downloadBlob(new Blob([response.data]), `${baseName}.${docExt}`)
+    ElMessage.success('已导出文档')
   } catch (e) {
     ElMessage.error('导出失败: ' + (e.message || '未知错误'))
   }
 }
 
 const exportContentToWord = async (content) => {
+  const docExt = currentDoc.value?.fileType || 'docx'
+  const baseName = currentDoc.value ? currentDoc.value.title + '_AI导出' : 'AI_内容导出'
   try {
     const response = await request.post('/ai/generate-word', {
-      title: 'AI_内容导出',
+      title: baseName,
       content: content
     }, { responseType: 'blob' })
-    downloadBlob(new Blob([response.data]), 'AI_内容导出.docx')
-    ElMessage.success('已导出为Word文档')
+    downloadBlob(new Blob([response.data]), `${baseName}.${docExt}`)
+    ElMessage.success('已导出文档')
   } catch (e) {
     ElMessage.error('导出失败')
   }
@@ -564,15 +610,7 @@ const copyText = (text) => {
 
 const renderMarkdown = (text) => {
   if (!text) return ''
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/`(.*?)`/g, '<code>$1</code>')
-    .replace(/\n/g, '<br>')
-    .replace(/^- (.*)$/gm, '<li>$1</li>')
+  return marked.parse(text)
 }
 
 const scrollToBottom = async () => {
@@ -629,8 +667,21 @@ const scrollToBottom = async () => {
 .ai-bubble { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 4px 16px 16px 16px; }
 .user-bubble { background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: white; border-radius: 16px 4px 16px 16px; }
 .bubble-text :deep(code) { background: rgba(0, 0, 0, 0.06); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+.bubble-text :deep(pre) { background: #1e1e2e; color: #cdd6f4; padding: 14px 16px; border-radius: 8px; overflow-x: auto; margin: 8px 0; font-size: 13px; line-height: 1.5; }
+.bubble-text :deep(pre code) { background: none; padding: 0; color: inherit; font-size: 13px; }
 .bubble-text :deep(strong) { font-weight: 700; }
 .bubble-text :deep(li) { margin-left: 16px; list-style: disc; }
+.bubble-text :deep(ol li) { list-style: decimal; }
+.bubble-text :deep(h1), .bubble-text :deep(h2), .bubble-text :deep(h3), .bubble-text :deep(h4) { margin: 12px 0 6px 0; font-weight: 700; }
+.bubble-text :deep(h1) { font-size: 20px; }
+.bubble-text :deep(h2) { font-size: 17px; }
+.bubble-text :deep(h3) { font-size: 15px; }
+.bubble-text :deep(table) { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+.bubble-text :deep(th), .bubble-text :deep(td) { border: 1px solid var(--border-light); padding: 6px 10px; text-align: left; }
+.bubble-text :deep(th) { background: var(--bg-base); font-weight: 600; }
+.bubble-text :deep(blockquote) { border-left: 3px solid var(--primary); padding: 4px 12px; margin: 8px 0; color: var(--text-secondary); background: rgba(79, 70, 229, 0.03); border-radius: 0 4px 4px 0; }
+.bubble-text :deep(p) { margin: 4px 0; }
+.bubble-text :deep(a) { color: var(--primary); text-decoration: underline; }
 .bubble-actions { display: flex; gap: 4px; margin-top: 8px; opacity: 0; transition: opacity 0.2s; }
 .message-bubble:hover .bubble-actions { opacity: 1; }
 .action-btn { background: none; border: 1px solid var(--border-light); border-radius: var(--radius-sm); padding: 4px 8px; cursor: pointer; color: var(--text-muted); transition: all 0.2s; }
@@ -661,4 +712,33 @@ const scrollToBottom = async () => {
 .dpi-name { display: block; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dpi-meta { font-size: 12px; color: var(--text-muted); }
 .tip-text { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+
+/* Sidebar AI Visual Effects */
+.sidebar-ai-visual { margin-top: auto; padding: 16px 0 8px 0; border-top: 1px solid var(--border-light); }
+.ai-visual-canvas { position: relative; display: flex; align-items: center; justify-content: center; height: 130px; overflow: hidden; }
+.neural-svg { width: 100%; height: 100%; }
+.nn-line { stroke: var(--primary); stroke-width: 0.8; opacity: 0.15; }
+.nn-l1 { animation: nn-pulse 3s ease-in-out infinite; }
+.nn-l2 { animation: nn-pulse 3s ease-in-out 0.3s infinite; }
+.nn-l3 { animation: nn-pulse 3s ease-in-out 0.6s infinite; }
+.nn-l4 { animation: nn-pulse 3s ease-in-out 0.9s infinite; }
+.nn-l5 { animation: nn-pulse 3s ease-in-out 1.2s infinite; }
+.nn-l6 { animation: nn-pulse 3s ease-in-out 0.15s infinite; }
+.nn-l7 { animation: nn-pulse 3s ease-in-out 1.5s infinite; }
+.nn-l8 { animation: nn-pulse 3s ease-in-out 1.8s infinite; }
+.nn-l9 { animation: nn-pulse 3s ease-in-out 2.1s infinite; }
+.nn-l10 { animation: nn-pulse 3s ease-in-out 2.4s infinite; }
+@keyframes nn-pulse { 0%, 100% { opacity: 0.1; stroke-width: 0.8; } 50% { opacity: 0.5; stroke-width: 1.5; } }
+.nn-node { fill: var(--primary); opacity: 0.4; }
+.nn-input { animation: nn-node-glow 4s ease-in-out infinite; }
+.nn-hidden { animation: nn-node-glow 4s ease-in-out 1s infinite; }
+.nn-output { animation: nn-node-glow 4s ease-in-out 2s infinite; }
+@keyframes nn-node-glow { 0%, 100% { opacity: 0.3; r: 5; } 50% { opacity: 0.8; r: 7; } }
+.ai-pulse-ring { position: absolute; width: 40px; height: 40px; border: 2px solid var(--primary); border-radius: 50%; opacity: 0; animation: pulse-ring 4s ease-out infinite; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+@keyframes pulse-ring { 0% { opacity: 0.3; transform: translate(-50%, -50%) scale(0.5); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.5); } }
+.ai-visual-label { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0 0 0; }
+.avl-en { font-size: 11px; color: var(--text-muted); letter-spacing: 0.05em; font-weight: 500; }
+.avl-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: dot-blink 2s ease-in-out infinite; }
+@keyframes dot-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.avl-status { font-size: 11px; color: #22c55e; font-weight: 500; }
 </style>
