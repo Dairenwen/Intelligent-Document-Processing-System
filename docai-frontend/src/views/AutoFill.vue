@@ -10,7 +10,7 @@
     </div>
 
     <!-- Step 1: 上传模板 -->
-    <div v-if="currentStep === 0" class="step-content">
+    <div v-if="currentStep === 0" class="step-content step-content-with-tips">
       <div class="step-panel card">
         <div class="panel-header">
           <div>
@@ -26,7 +26,7 @@
             <span>数据库中已有 <strong>{{ docCount }}</strong> 个文档可用作数据源（其中 <strong>{{ extractedCount }}</strong> 个已成功提取内容）</span>
             <el-button size="small" type="primary" plain class="manage-docs-btn" @click="$router.push('/documents')">管理文档</el-button>
           </div>
-          <div v-if="extractedCount === 0" class="source-warning">
+          <div v-if="!loadingStats && extractedCount === 0" class="source-warning">
             <el-icon color="#E65100"><WarningFilled /></el-icon>
             <span>暂无已提取数据的文档，请先前往文档管理页面上传并提取文档内容</span>
           </div>
@@ -34,12 +34,13 @@
 
         <div class="template-upload-area">
           <el-upload
+            v-if="templateFiles.length === 0"
             ref="templateUploadRef"
             drag
             multiple
             :auto-upload="false"
+            :show-file-list="false"
             :on-change="handleTemplateChange"
-            :on-remove="handleTemplateRemove"
             accept=".docx,.xlsx"
             class="template-uploader"
           >
@@ -49,15 +50,42 @@
               <p class="upload-hint">支持 .docx / .xlsx 格式，可同时上传多个模板</p>
             </div>
           </el-upload>
-        </div>
 
-        <div class="template-tips card" style="background: #FFFBEB; border-color: #FDE68A;">
-          <h4><el-icon :size="14"><InfoFilled /></el-icon> 模板使用提示</h4>
-          <ul>
-            <li>Word模板：在需要填写的位置使用 <code v-pre>{{字段名}}</code> 占位符，或留空表格单元格</li>
-            <li>Excel模板：第一行作为表头，下方空单元格将根据表头名称自动填充</li>
-            <li>AI 会自动识别模板中的待填字段，并从数据库中所有已提取的文档中匹配数据</li>
-          </ul>
+          <div
+            v-else
+            class="selected-files-panel"
+            @dragover.prevent
+            @drop.prevent="handlePanelDrop"
+          >
+            <div class="selected-files-header">
+              <h4>已选择模板文件（{{ templateFiles.length }}）</h4>
+              <el-button text type="danger" @click="clearTemplateFiles">清空</el-button>
+            </div>
+
+            <div class="selected-files-list">
+              <div class="selected-file-item" v-for="f in templateFiles" :key="f.uid">
+                <div class="selected-file-meta">
+                  <el-icon :size="18" :color="f.name.endsWith('.xlsx') ? '#10B981' : '#3B82F6'"><Document /></el-icon>
+                  <span class="selected-file-name" :title="f.name">{{ f.name }}</span>
+                  <span class="selected-file-size">{{ formatFileSize(f.size || 0) }}</span>
+                </div>
+                <el-button text type="danger" @click="removeTemplateFile(f)">移除</el-button>
+              </div>
+            </div>
+
+            <el-upload
+              multiple
+              :auto-upload="false"
+              :show-file-list="false"
+              :on-change="handleTemplateChange"
+              accept=".docx,.xlsx"
+              class="add-more-uploader"
+            >
+              <el-button type="primary">
+                <el-icon><UploadFilled /></el-icon> 继续添加模板
+              </el-button>
+            </el-upload>
+          </div>
         </div>
 
         <div class="select-summary">
@@ -66,6 +94,15 @@
             <el-icon><MagicStick /></el-icon> 开始智能填充
           </el-button>
         </div>
+      </div>
+
+      <div class="template-tips card" style="background: #FFFBEB; border-color: #FDE68A;">
+        <h4><el-icon :size="14"><InfoFilled /></el-icon> 模板使用提示</h4>
+        <ul>
+          <li>Word模板：在需要填写的位置使用 <code v-pre>{{字段名}}</code> 占位符，或留空表格单元格</li>
+          <li>Excel模板：第一行作为表头，下方空单元格将根据表头名称自动填充</li>
+          <li>AI 会自动识别模板中的待填字段，并从数据库中所有已提取的文档中匹配数据</li>
+        </ul>
       </div>
     </div>
 
@@ -159,6 +196,8 @@ import {
 
 const router = useRouter()
 
+const ACCEPTED_EXTENSIONS = ['.docx', '.xlsx']
+
 // State
 const currentStep = ref(0)
 const templateFiles = ref([])
@@ -200,12 +239,76 @@ const loadStats = async () => {
 }
 
 const handleTemplateChange = (file) => {
+  if (!file?.raw) return
+  if (!isTemplateType(file.raw.name)) {
+    ElMessage.warning('仅支持 .docx / .xlsx 模板文件')
+    return
+  }
+  if (isDuplicateRawFile(file.raw)) return
   templateFiles.value.push(file)
 }
 
 const handleTemplateRemove = (file) => {
-  const idx = templateFiles.value.indexOf(file)
+  const idx = templateFiles.value.findIndex(f => f.uid === file.uid)
   if (idx >= 0) templateFiles.value.splice(idx, 1)
+}
+
+const removeTemplateFile = (file) => {
+  handleTemplateRemove(file)
+}
+
+const clearTemplateFiles = () => {
+  templateFiles.value = []
+}
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 B'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+const isTemplateType = (name = '') => {
+  const lowerName = name.toLowerCase()
+  return ACCEPTED_EXTENSIONS.some(ext => lowerName.endsWith(ext))
+}
+
+const isDuplicateRawFile = (rawFile) => {
+  return templateFiles.value.some((f) => {
+    const raw = f.raw
+    return raw && raw.name === rawFile.name && raw.size === rawFile.size && raw.lastModified === rawFile.lastModified
+  })
+}
+
+const handlePanelDrop = (event) => {
+  const droppedFiles = Array.from(event.dataTransfer?.files || [])
+  if (droppedFiles.length === 0) return
+
+  let added = 0
+  let invalid = 0
+
+  droppedFiles.forEach((raw, index) => {
+    if (!isTemplateType(raw.name)) {
+      invalid += 1
+      return
+    }
+    if (isDuplicateRawFile(raw)) return
+
+    templateFiles.value.push({
+      uid: `drop_${Date.now()}_${index}`,
+      name: raw.name,
+      size: raw.size,
+      raw
+    })
+    added += 1
+  })
+
+  if (added > 0) {
+    ElMessage.success(`已添加 ${added} 个模板文件`)
+  }
+  if (invalid > 0) {
+    ElMessage.warning(`已忽略 ${invalid} 个非模板文件，仅支持 .docx / .xlsx`)
+  }
 }
 
 const startFill = async () => {
@@ -317,10 +420,24 @@ onMounted(loadStats)
   min-height: 0;
 }
 
+.step-content-with-tips {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.step-content-with-tips .step-panel {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+
 .step-panel {
   height: 100%;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 
 .panel-header {
@@ -428,8 +545,70 @@ onMounted(loadStats)
   margin-top: 4px;
 }
 
+.selected-files-panel {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  background: var(--bg-base);
+  padding: 14px 16px;
+}
+
+.selected-files-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.selected-files-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.selected-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.selected-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: #fff;
+}
+
+.selected-file-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.selected-file-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-file-size {
+  color: var(--text-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
 .template-tips {
-  margin: 0 28px 16px;
+  margin: 0;
   padding: 16px 20px;
   border-radius: var(--radius-md);
 }

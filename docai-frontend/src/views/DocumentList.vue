@@ -44,7 +44,19 @@
     </div>
 
     <!-- 文档表格 -->
-    <div class="table-wrapper card" v-loading="loading">
+    <div
+      class="table-wrapper card"
+      v-loading="loading"
+      @dragenter.prevent="onListDragEnter"
+      @dragover.prevent="onListDragOver"
+      @dragleave.prevent="onListDragLeave"
+      @drop.prevent="onListDrop"
+    >
+      <div v-if="dragActive" class="drop-overlay">
+        <el-icon :size="28"><UploadFilled /></el-icon>
+        <span>拖放到此处上传文档</span>
+      </div>
+
       <el-empty v-if="!loading && documents.length === 0" description="暂无文档，上传你的第一个文件吧" />
       <el-table
         v-else
@@ -232,6 +244,8 @@ const showUploadDialog = ref(false)
 const uploadFileList = ref([])
 const uploading = ref(false)
 const uploadRef = ref(null)
+const dragActive = ref(false)
+const dragDepth = ref(0)
 
 // 信息提取相关
 const showInfoDialog = ref(false)
@@ -246,6 +260,8 @@ const viewDocTitle = ref('')
 const viewDocContent = ref('')
 
 const typeTagMap = { docx: 'primary', xlsx: 'success', txt: 'info', md: 'warning' }
+const validExts = ['.docx', '.xlsx', '.txt', '.md']
+const maxFileSize = 100 * 1024 * 1024
 
 const loadDocuments = async () => {
   loading.value = true
@@ -271,14 +287,13 @@ const handleSelectionChange = (selection) => {
 
 // 文件选择处理
 const handleFileChange = (file, fileList) => {
-  const validExts = ['.docx', '.xlsx', '.txt', '.md']
   const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
   if (!validExts.includes(ext)) {
     ElMessage.error('不支持的格式: ' + ext)
     fileList.pop()
     return
   }
-  if (file.size > 100 * 1024 * 1024) {
+  if (file.size > maxFileSize) {
     ElMessage.error('文件不能超过100MB')
     fileList.pop()
     return
@@ -294,6 +309,81 @@ const onUploadDialogClose = () => {
   uploadFileList.value = []
   if (uploadRef.value) {
     uploadRef.value.clearFiles()
+  }
+}
+
+const isDuplicateUpload = (rawFile) => {
+  return uploadFileList.value.some((item) => {
+    const raw = item.raw
+    return raw && raw.name === rawFile.name && raw.size === rawFile.size && raw.lastModified === rawFile.lastModified
+  })
+}
+
+const onListDragEnter = () => {
+  dragDepth.value += 1
+  dragActive.value = true
+}
+
+const onListDragOver = () => {
+  if (!dragActive.value) dragActive.value = true
+}
+
+const onListDragLeave = () => {
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+  if (dragDepth.value === 0) {
+    dragActive.value = false
+  }
+}
+
+const onListDrop = (event) => {
+  dragDepth.value = 0
+  dragActive.value = false
+
+  const droppedFiles = Array.from(event.dataTransfer?.files || [])
+  if (droppedFiles.length === 0) return
+
+  let added = 0
+  let invalidType = 0
+  let oversize = 0
+  let duplicate = 0
+
+  droppedFiles.forEach((raw, index) => {
+    const ext = raw.name.substring(raw.name.lastIndexOf('.')).toLowerCase()
+    if (!validExts.includes(ext)) {
+      invalidType += 1
+      return
+    }
+    if (raw.size > maxFileSize) {
+      oversize += 1
+      return
+    }
+    if (isDuplicateUpload(raw)) {
+      duplicate += 1
+      return
+    }
+
+    uploadFileList.value.push({
+      uid: `drop_${Date.now()}_${index}`,
+      name: raw.name,
+      size: raw.size,
+      status: 'ready',
+      raw
+    })
+    added += 1
+  })
+
+  if (added > 0) {
+    showUploadDialog.value = true
+    ElMessage.success(`已添加 ${added} 个文件，点击“上传并提取信息”开始处理`)
+  }
+  if (invalidType > 0) {
+    ElMessage.warning(`已忽略 ${invalidType} 个不支持格式文件`)
+  }
+  if (oversize > 0) {
+    ElMessage.warning(`已忽略 ${oversize} 个超过100MB的文件`)
+  }
+  if (duplicate > 0) {
+    ElMessage.info(`已忽略 ${duplicate} 个重复文件`)
   }
 }
 
@@ -429,6 +519,24 @@ onMounted(loadDocuments)
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(79, 70, 229, 0.12);
+  border: 2px dashed var(--primary);
+  color: var(--primary);
+  font-size: 16px;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .table-wrapper :deep(.el-table) {
