@@ -1,0 +1,20 @@
+# IDE 配置文件
+.idea/
+.vscode/
+*.iml
+
+# Maven 构建输出
+docai/docai/target/
+
+# 前端依赖与构建产物
+docai-frontend/node_modules/
+docai-frontend/dist/
+docai-frontend/.npm-cache/
+
+# 日志文件
+.github/java-upgrade/*/logs/
+docai/docai/.github/java-upgrade/*/logs/
+
+# 系统文件
+.DS_Store
+Thumbs.db
