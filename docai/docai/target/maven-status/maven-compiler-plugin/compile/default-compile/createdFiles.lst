@@ -2,7 +2,6 @@ com\team\docai\service\FileParserService.class
 com\team\docai\controller\DocumentController.class
 com\team\docai\common\Result.class
 com\team\docai\controller\AIController.class
-com\team\docai\service\AutoFillService.class
 com\team\docai\config\GlobalExceptionHandler.class
 com\team\docai\config\PasswordEncoderConfig.class
 com\team\docai\mapper\DocumentMapper.class
@@ -21,4 +20,3 @@ com\team\docai\mapper\UserMapper.class
 com\team\docai\config\DatabaseInitializer.class
 com\team\docai\config\SecurityConfig.class
 com\team\docai\config\JwtAuthFilter.class
-com\team\docai\controller\AutoFillController.class

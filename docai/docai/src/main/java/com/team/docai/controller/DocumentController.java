@@ -206,31 +206,25 @@ public class DocumentController {
     /** 获取文档统计信息 */
     @GetMapping("/stats")
     public Result<?> stats(@RequestAttribute(value = "userId", required = false) Long userId) {
-        LambdaQueryWrapper<Document> baseWrapper = new LambdaQueryWrapper<>();
+        // 单次查询获取所有统计数据
+        LambdaQueryWrapper<Document> wrapper = new LambdaQueryWrapper<>();
         if (userId != null) {
-            baseWrapper.eq(Document::getUserId, userId);
+            wrapper.eq(Document::getUserId, userId);
         }
-        Long total = documentMapper.selectCount(new LambdaQueryWrapper<Document>()
-                .eq(userId != null, Document::getUserId, userId));
-        Long docxCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>()
-                .eq(userId != null, Document::getUserId, userId)
-                .eq(Document::getFileType, "docx"));
-        Long xlsxCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>()
-                .eq(userId != null, Document::getUserId, userId)
-                .eq(Document::getFileType, "xlsx"));
-        Long txtCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>()
-                .eq(userId != null, Document::getUserId, userId)
-                .eq(Document::getFileType, "txt"));
-        Long mdCount = documentMapper.selectCount(new LambdaQueryWrapper<Document>()
-                .eq(userId != null, Document::getUserId, userId)
-                .eq(Document::getFileType, "md"));
+        List<Document> allDocs = documentMapper.selectList(
+                wrapper.select(Document::getFileType));
+
+        Map<String, Long> countByType = allDocs.stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        doc -> doc.getFileType() != null ? doc.getFileType() : "unknown",
+                        java.util.stream.Collectors.counting()));
 
         Map<String, Object> stats = new HashMap<>();
-        stats.put("total", total);
-        stats.put("docx", docxCount);
-        stats.put("xlsx", xlsxCount);
-        stats.put("txt", txtCount);
-        stats.put("md", mdCount);
+        stats.put("total", (long) allDocs.size());
+        stats.put("docx", countByType.getOrDefault("docx", 0L));
+        stats.put("xlsx", countByType.getOrDefault("xlsx", 0L));
+        stats.put("txt", countByType.getOrDefault("txt", 0L));
+        stats.put("md", countByType.getOrDefault("md", 0L));
         return Result.success(stats);
     }
 

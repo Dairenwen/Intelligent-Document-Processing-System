@@ -76,16 +76,6 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="提取状态" width="120" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="row.contentText && row.contentText.length > 0" size="small" type="success" effect="plain" round>
-              已提取
-            </el-tag>
-            <el-tag v-else size="small" type="danger" effect="plain" round>
-              未提取
-            </el-tag>
-          </template>
-        </el-table-column>
         <el-table-column label="类型" width="100" align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="typeTagMap[row.fileType]" effect="plain" round>
@@ -103,35 +93,30 @@
             <span class="text-muted">{{ formatDate(row.createdAt) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" align="center" fixed="right">
+        <el-table-column label="操作" width="240" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button-group>
-              <el-tooltip content="文件预览">
-                <el-button size="small" type="warning" plain @click="viewContent(row)" :disabled="!row.contentText">
+            <div class="action-buttons">
+              <el-tooltip content="文件预览" placement="top">
+                <el-button size="small" type="primary" plain round @click="viewContent(row)" :disabled="!row.contentText && !row.rawText">
                   <el-icon><View /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-tooltip content="前往AI对话分析">
-                <el-button size="small" type="primary" plain @click="goChat(row)">
+              <el-tooltip content="AI 对话" placement="top">
+                <el-button size="small" type="success" plain round @click="goChat(row)">
                   <el-icon><ChatLineRound /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-tooltip content="AI信息提取">
-                <el-button size="small" type="success" plain @click="extractInfo(row)">
-                  <el-icon><DataAnalysis /></el-icon>
-                </el-button>
-              </el-tooltip>
-              <el-tooltip content="下载">
-                <el-button size="small" type="info" plain @click="downloadDoc(row)">
+              <el-tooltip content="下载" placement="top">
+                <el-button size="small" type="warning" plain round @click="downloadDoc(row)">
                   <el-icon><Download /></el-icon>
                 </el-button>
               </el-tooltip>
-              <el-tooltip content="删除">
-                <el-button size="small" type="danger" plain @click="deleteDoc(row)">
+              <el-tooltip content="删除" placement="top">
+                <el-button size="small" type="danger" plain round @click="deleteDoc(row)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-tooltip>
-            </el-button-group>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -181,26 +166,11 @@
       </template>
     </el-dialog>
 
-    <!-- AI信息提取结果弹窗 -->
-    <el-dialog v-model="showInfoDialog" :title="infoDialogTitle" width="700px">
-      <div class="info-result" v-loading="infoLoading">
-        <div v-if="!infoLoading && extractedInfo" class="info-content">
-          <div class="info-section" v-if="infoDocTitle">
-            <h4>文档：{{ infoDocTitle }}</h4>
-          </div>
-          <div class="info-section">
-            <pre class="info-text">{{ extractedInfo }}</pre>
-          </div>
-        </div>
-        <el-empty v-if="!infoLoading && !extractedInfo" description="暂无提取信息" />
-      </div>
-    </el-dialog>
-
     <!-- 查看提取内容弹窗 -->
-    <el-dialog v-model="showContentDialog" title="文档提取内容" width="700px">
+    <el-dialog v-model="showContentDialog" title="文档内容预览" width="750px" top="5vh">
       <div class="content-result">
         <div class="content-section" v-if="viewDocTitle">
-          <h4>文档：{{ viewDocTitle }}</h4>
+          <h4>{{ viewDocTitle }}</h4>
         </div>
         <div class="content-body">
           <pre class="content-text">{{ viewDocContent }}</pre>
@@ -213,12 +183,13 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useDocumentStore } from '../store/documentStore'
+import { uploadDocument } from '../api'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
   Search, UploadFilled, Download, Delete, ChatLineRound,
-  DataAnalysis, Refresh, View, Document, Grid, EditPen
+  Refresh, View, Document, Grid, EditPen
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -241,13 +212,6 @@ const uploading = ref(false)
 const uploadRef = ref(null)
 const dragActive = ref(false)
 const dragDepth = ref(0)
-
-// 信息提取相关
-const showInfoDialog = ref(false)
-const extractedInfo = ref('')
-const infoLoading = ref(false)
-const infoDialogTitle = ref('AI 关键信息提取')
-const infoDocTitle = ref('')
 
 // 查看内容
 const showContentDialog = ref(false)
@@ -416,27 +380,10 @@ const goChat = (row) => router.push(`/ai-chat?docId=${row.id}`)
 
 const downloadDoc = (row) => window.open(`/api/documents/${row.id}/download`)
 
-// AI关键信息提取
-const extractInfo = async (row) => {
-  infoDocTitle.value = row.title
-  infoDialogTitle.value = 'AI 关键信息提取 - ' + row.title
-  showInfoDialog.value = true
-  infoLoading.value = true
-  extractedInfo.value = ''
-  try {
-    const res = await aiExtractInfo({ documentId: row.id })
-    extractedInfo.value = res.data?.info || '无法提取信息'
-  } catch (e) {
-    extractedInfo.value = '提取失败: ' + (e.message || '未知错误')
-  } finally {
-    infoLoading.value = false
-  }
-}
-
 // 查看已提取的文档内容
 const viewContent = (row) => {
   viewDocTitle.value = row.title
-  viewDocContent.value = row.contentText || '暂无提取内容'
+  viewDocContent.value = row.contentText || row.rawText || '暂无内容'
   showContentDialog.value = true
 }
 
@@ -604,33 +551,16 @@ onMounted(() => {
   color: var(--text-secondary);
 }
 
-/* Info dialog */
-.info-result {
-  min-height: 200px;
+/* Action buttons */
+.action-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
-.info-section {
-  margin-bottom: 16px;
-}
-
-.info-section h4 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-}
-
-.info-text {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 14px;
-  line-height: 1.8;
-  color: var(--text-primary);
-  background: var(--bg-base);
-  padding: 20px;
-  border-radius: var(--radius-md);
-  max-height: 500px;
-  overflow-y: auto;
+.action-buttons .el-button {
+  padding: 6px 10px;
 }
 
 /* Content dialog */
@@ -649,7 +579,7 @@ onMounted(() => {
 }
 
 .content-body {
-  max-height: 500px;
+  max-height: 60vh;
   overflow-y: auto;
 }
 

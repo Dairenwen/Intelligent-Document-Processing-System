@@ -38,6 +38,9 @@ public class AutoFillService {
         long startTime = System.currentTimeMillis();
         log.info("开始自动填表(auto模式), 模板文件={}", templateFile.getOriginalFilename());
 
+        // 缓存模板字节，避免多次读取InputStream可能失效的问题
+        byte[] templateBytes = templateFile.getBytes();
+
         // 1. 收集用户所有已有文档内容
         String sourceContent = collectAllSourceContent(userId);
         if (sourceContent.isBlank()) {
@@ -49,32 +52,41 @@ public class AutoFillService {
         String templateFilename = templateFile.getOriginalFilename();
         if (templateFilename == null) templateFilename = "template.docx";
         String ext = templateFilename.substring(templateFilename.lastIndexOf(".")).toLowerCase();
-        String templateStructure = analyzeTemplate(templateFile, ext);
-        log.info("模板结构分析完成: {}", templateStructure.substring(0, Math.min(200, templateStructure.length())));
+        String templateStructure;
+        try (InputStream is = new ByteArrayInputStream(templateBytes)) {
+            if (ext.equals(".docx")) {
+                templateStructure = docParseService.analyzeWordTemplate(is);
+            } else if (ext.equals(".xlsx")) {
+                templateStructure = docParseService.analyzeExcelTemplate(is);
+            } else {
+                throw new IllegalArgumentException("模板文件格式不支持: " + ext + "，仅支持 .docx 和 .xlsx");
+            }
+        }
+        log.info("模板结构分析完成: {}", templateStructure.substring(0, Math.min(500, templateStructure.length())));
 
         // 3. AI提取结构化数据
         String processedContent = sourceContent;
-        if (sourceContent.length() > 15000) {
+        if (sourceContent.length() > 8000) {
             processedContent = summarizeContent(sourceContent);
             log.info("源文档内容已摘要化, 摘要长度={}", processedContent.length());
         }
 
         String aiResponse = aiService.extractStructuredData(templateStructure, processedContent);
-        log.info("AI数据提取完成, 响应长度={}", aiResponse.length());
+        log.info("AI数据提取完成, 响应: {}", aiResponse.substring(0, Math.min(500, aiResponse.length())));
 
         // 4. 解析AI返回的JSON
         Map<String, String> extractedData = parseAIResponse(aiResponse);
-        log.info("解析出{}个字段值", extractedData.size());
+        log.info("解析出{}个字段值: {}", extractedData.size(), extractedData);
 
         // 5. 填充模板
         byte[] result;
-        try (InputStream templateIs = templateFile.getInputStream()) {
+        try (InputStream templateIs = new ByteArrayInputStream(templateBytes)) {
             if (ext.equals(".docx")) {
                 result = docParseService.fillWordTemplate(templateIs, extractedData);
             } else if (ext.equals(".xlsx")) {
                 result = docParseService.fillExcelTemplate(templateIs, extractedData);
             } else {
-                throw new IllegalArgumentException("模板文件格式不支持: " + ext + "，仅支持 .docx 和 .xlsx");
+                throw new IllegalArgumentException("模板文件格式不支持: " + ext);
             }
         }
 
@@ -96,7 +108,7 @@ public class AutoFillService {
         }
 
         String processedContent = sourceContent;
-        if (sourceContent.length() > 15000) {
+        if (sourceContent.length() > 8000) {
             processedContent = summarizeContent(sourceContent);
         }
 
@@ -105,18 +117,28 @@ public class AutoFillService {
             String filename = templateFile.getOriginalFilename();
             if (filename == null) filename = "template.docx";
             try {
+                byte[] tplBytes = templateFile.getBytes();
                 String ext = filename.substring(filename.lastIndexOf(".")).toLowerCase();
-                String templateStructure = analyzeTemplate(templateFile, ext);
+                String templateStructure;
+                try (InputStream is = new ByteArrayInputStream(tplBytes)) {
+                    if (ext.equals(".docx")) {
+                        templateStructure = docParseService.analyzeWordTemplate(is);
+                    } else if (ext.equals(".xlsx")) {
+                        templateStructure = docParseService.analyzeExcelTemplate(is);
+                    } else {
+                        log.warn("跳过不支持的模板格式: {}", filename);
+                        continue;
+                    }
+                }
                 String aiResponse = aiService.extractStructuredData(templateStructure, processedContent);
                 Map<String, String> data = parseAIResponse(aiResponse);
                 byte[] filled;
-                try (InputStream is = templateFile.getInputStream()) {
+                try (InputStream is = new ByteArrayInputStream(tplBytes)) {
                     if (ext.equals(".docx")) {
                         filled = docParseService.fillWordTemplate(is, data);
                     } else if (ext.equals(".xlsx")) {
                         filled = docParseService.fillExcelTemplate(is, data);
                     } else {
-                        log.warn("跳过不支持的模板格式: {}", filename);
                         continue;
                     }
                 }
@@ -165,6 +187,9 @@ public class AutoFillService {
         long startTime = System.currentTimeMillis();
         log.info("开始自动填表, 源文档数量={}, 模板文件={}", sourceDocIds.size(), templateFile.getOriginalFilename());
 
+        // 缓存模板字节
+        byte[] templateBytes = templateFile.getBytes();
+
         // 1. 收集所有源文档内容
         String sourceContent = collectSourceContent(sourceDocIds);
         log.info("源文档内容收集完成, 总字符数={}", sourceContent.length());
@@ -173,33 +198,41 @@ public class AutoFillService {
         String templateFilename = templateFile.getOriginalFilename();
         if (templateFilename == null) templateFilename = "template.docx";
         String ext = templateFilename.substring(templateFilename.lastIndexOf(".")).toLowerCase();
-        String templateStructure = analyzeTemplate(templateFile, ext);
-        log.info("模板结构分析完成: {}", templateStructure.substring(0, Math.min(200, templateStructure.length())));
+        String templateStructure;
+        try (InputStream is = new ByteArrayInputStream(templateBytes)) {
+            if (ext.equals(".docx")) {
+                templateStructure = docParseService.analyzeWordTemplate(is);
+            } else if (ext.equals(".xlsx")) {
+                templateStructure = docParseService.analyzeExcelTemplate(is);
+            } else {
+                throw new IllegalArgumentException("模板文件格式不支持: " + ext + "，仅支持 .docx 和 .xlsx");
+            }
+        }
+        log.info("模板结构分析完成: {}", templateStructure.substring(0, Math.min(500, templateStructure.length())));
 
         // 3. AI提取结构化数据
-        // 如果源文档内容太长，进行分段摘要
         String processedContent = sourceContent;
-        if (sourceContent.length() > 15000) {
+        if (sourceContent.length() > 8000) {
             processedContent = summarizeContent(sourceContent);
             log.info("源文档内容已摘要化, 摘要长度={}", processedContent.length());
         }
 
         String aiResponse = aiService.extractStructuredData(templateStructure, processedContent);
-        log.info("AI数据提取完成, 响应长度={}", aiResponse.length());
+        log.info("AI数据提取完成, 响应: {}", aiResponse.substring(0, Math.min(500, aiResponse.length())));
 
         // 4. 解析AI返回的JSON
         Map<String, String> extractedData = parseAIResponse(aiResponse);
-        log.info("解析出{}个字段值", extractedData.size());
+        log.info("解析出{}个字段值: {}", extractedData.size(), extractedData);
 
         // 5. 填充模板
         byte[] result;
-        try (InputStream templateIs = templateFile.getInputStream()) {
+        try (InputStream templateIs = new ByteArrayInputStream(templateBytes)) {
             if (ext.equals(".docx")) {
                 result = docParseService.fillWordTemplate(templateIs, extractedData);
             } else if (ext.equals(".xlsx")) {
                 result = docParseService.fillExcelTemplate(templateIs, extractedData);
             } else {
-                throw new IllegalArgumentException("模板文件格式不支持: " + ext + "，仅支持 .docx 和 .xlsx");
+                throw new IllegalArgumentException("模板文件格式不支持: " + ext);
             }
         }
 
@@ -220,7 +253,7 @@ public class AutoFillService {
 
         // 摘要化
         String processedContent = sourceContent;
-        if (sourceContent.length() > 15000) {
+        if (sourceContent.length() > 8000) {
             processedContent = summarizeContent(sourceContent);
         }
 
@@ -230,10 +263,21 @@ public class AutoFillService {
             String filename = templateFile.getOriginalFilename();
             if (filename == null) filename = "template.docx";
             try {
+                byte[] tplBytes = templateFile.getBytes();
                 String ext = filename.substring(filename.lastIndexOf(".")).toLowerCase();
 
                 // 分析模板
-                String templateStructure = analyzeTemplate(templateFile, ext);
+                String templateStructure;
+                try (InputStream is = new ByteArrayInputStream(tplBytes)) {
+                    if (ext.equals(".docx")) {
+                        templateStructure = docParseService.analyzeWordTemplate(is);
+                    } else if (ext.equals(".xlsx")) {
+                        templateStructure = docParseService.analyzeExcelTemplate(is);
+                    } else {
+                        log.warn("跳过不支持的模板格式: {}", filename);
+                        continue;
+                    }
+                }
 
                 // AI提取数据
                 String aiResponse = aiService.extractStructuredData(templateStructure, processedContent);
@@ -241,13 +285,12 @@ public class AutoFillService {
 
                 // 填充
                 byte[] filled;
-                try (InputStream is = templateFile.getInputStream()) {
+                try (InputStream is = new ByteArrayInputStream(tplBytes)) {
                     if (ext.equals(".docx")) {
                         filled = docParseService.fillWordTemplate(is, data);
                     } else if (ext.equals(".xlsx")) {
                         filled = docParseService.fillExcelTemplate(is, data);
                     } else {
-                        log.warn("跳过不支持的模板格式: {}", filename);
                         continue;
                     }
                 }
@@ -255,7 +298,6 @@ public class AutoFillService {
                 log.info("模板 {} 填充完成, 字段数={}", filename, data.size());
             } catch (Exception e) {
                 log.error("模板 {} 填充失败: {}", filename, e.getMessage());
-                // 继续处理其他模板，不中断
             }
         }
 
@@ -293,20 +335,6 @@ public class AutoFillService {
             }
         }
         return sb.toString();
-    }
-
-    /**
-     * 分析模板结构
-     */
-    private String analyzeTemplate(MultipartFile templateFile, String ext) throws IOException {
-        try (InputStream is = templateFile.getInputStream()) {
-            if (ext.equals(".docx")) {
-                return docParseService.analyzeWordTemplate(is);
-            } else if (ext.equals(".xlsx")) {
-                return docParseService.analyzeExcelTemplate(is);
-            }
-        }
-        throw new IllegalArgumentException("无法分析的模板格式: " + ext);
     }
 
     /**

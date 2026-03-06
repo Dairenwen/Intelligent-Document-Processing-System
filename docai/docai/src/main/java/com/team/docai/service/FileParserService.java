@@ -113,22 +113,35 @@ public class FileParserService {
                     .execute();
 
             String body = response.body();
-            log.debug("同步解析响应: status={}, bodyLength={}",
-                    response.getStatus(), body != null ? body.length() : 0);
+            log.debug("同步解析响应: status={}, body={}", response.getStatus(), body);
 
-            if (response.getStatus() == 200) {
+            if (response.getStatus() == 200 && body != null && !body.isBlank()) {
                 JSONObject json = JSONUtil.parseObj(body);
-                String status = json.getStr("status");
 
-                if ("succeeded".equals(status)) {
-                    String content = json.getStr("content");
-                    if (content != null && !content.isBlank()) {
-                        log.info("同步解析成功: contentLength={}", content.length());
-                        return content;
+                // 尝试多种响应结构提取content
+                String content = json.getStr("content");
+                if (content == null || content.isBlank()) {
+                    // 可能嵌套在data字段中
+                    JSONObject data = json.getJSONObject("data");
+                    if (data != null) {
+                        content = data.getStr("content");
                     }
                 }
+
+                if (content != null && !content.isBlank()) {
+                    log.info("同步解析成功: contentLength={}", content.length());
+                    return content;
+                }
+
+                // 如果响应中包含task_id，说明API将其转为了异步任务
+                String taskId = json.getStr("task_id");
+                if (taskId == null) taskId = json.getStr("id");
+                if (taskId != null && !taskId.isBlank()) {
+                    log.info("同步解析返回了任务ID，转为轮询模式: taskId={}", taskId);
+                    return pollAsyncResult(taskId);
+                }
             }
-            log.warn("同步解析端点未返回成功结果, 尝试异步解析");
+            log.warn("同步解析端点未返回有效内容, 尝试异步解析");
         } catch (Exception e) {
             log.warn("同步解析端点调用失败, 尝试异步解析: {}", e.getMessage());
         }
@@ -164,23 +177,36 @@ public class FileParserService {
                 .timeout(60000)
                 .execute();
 
+        String createBody = createResp.body();
+        log.debug("异步创建任务响应: status={}, body={}", createResp.getStatus(), createBody);
+
         if (createResp.getStatus() != 200) {
             throw new RuntimeException("创建异步任务HTTP错误: status=" + createResp.getStatus());
         }
 
-        JSONObject createJson = JSONUtil.parseObj(createResp.body());
-        if (!createJson.getBool("success", false)) {
-            throw new RuntimeException("创建异步任务失败: " + createJson.getStr("message"));
-        }
+        JSONObject createJson = JSONUtil.parseObj(createBody);
 
+        // 从响应中提取task_id（兼容多种字段名）
         String taskId = createJson.getStr("task_id");
+        if (taskId == null || taskId.isBlank()) {
+            taskId = createJson.getStr("id");
+        }
+        if (taskId == null || taskId.isBlank()) {
+            throw new RuntimeException("创建异步任务未返回task_id: " + createBody);
+        }
         log.info("异步解析任务已创建: taskId={}", taskId);
 
         // Step 2: 轮询获取结果
+        return pollAsyncResult(taskId);
+    }
+
+    /**
+     * 轮询异步解析结果
+     */
+    private String pollAsyncResult(String taskId) throws InterruptedException {
         for (int attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
             Thread.sleep(POLL_INTERVAL_MS);
 
-            // 每次轮询重新生成token以防过期
             String pollToken = generateApiToken();
 
             HttpResponse resultResp = HttpRequest
@@ -198,8 +224,12 @@ public class FileParserService {
             JSONObject resultJson = JSONUtil.parseObj(resultResp.body());
             String status = resultJson.getStr("status");
 
-            if ("succeeded".equals(status)) {
+            if ("succeeded".equals(status) || "success".equals(status)) {
                 String content = resultJson.getStr("content");
+                if (content == null || content.isBlank()) {
+                    JSONObject data = resultJson.getJSONObject("data");
+                    if (data != null) content = data.getStr("content");
+                }
                 log.info("异步解析成功: taskId={}, contentLength={}, attempts={}",
                         taskId, content != null ? content.length() : 0, attempt);
                 return content != null ? content : "";
@@ -207,7 +237,6 @@ public class FileParserService {
                 throw new RuntimeException("异步解析失败: " + resultJson.getStr("message"));
             }
 
-            // status == "processing" → 继续轮询
             if (attempt % 10 == 0) {
                 log.info("异步解析进行中: taskId={}, attempt={}/{}", taskId, attempt, MAX_POLL_ATTEMPTS);
             }

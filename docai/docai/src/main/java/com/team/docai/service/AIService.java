@@ -29,7 +29,7 @@ public class AIService {
     @Value("${ai.api-key}")
     private String apiKey;
 
-    @Value("${ai.model:glm-4.7-flash}")
+    @Value("${ai.model:glm-4-flash}")
     private String model;
 
     @Value("${ai.max-retries:3}")
@@ -39,14 +39,14 @@ public class AIService {
 
     private static final String CHAT_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
-    /** 并发限制：最多同时3个AI请求，防止API限流 */
-    private final Semaphore aiSemaphore = new Semaphore(3);
+    /** 并发限制：glm-4-flash免费且高并发，放宽到10 */
+    private final Semaphore aiSemaphore = new Semaphore(10);
 
     @PostConstruct
     public void init() {
         try {
             client = new ClientV4.Builder(apiKey)
-                    .networkConfig(60, 120, 120, 120, TimeUnit.SECONDS)
+                    .networkConfig(30, 60, 60, 60, TimeUnit.SECONDS)
                     .build();
             log.info("智谱AI客户端初始化完成, model={}", model);
         } catch (Exception e) {
@@ -162,7 +162,7 @@ public class AIService {
                 .header("Authorization", "Bearer " + token)
                 .header("Content-Type", "application/json")
                 .body(body.toString())
-                .timeout(120000)
+                .timeout(60000)
                 .execute();
 
         if (response.getStatus() != 200) {
@@ -238,10 +238,10 @@ public class AIService {
      * 使用文档原始文本作为上下文，根据用户指令智能判断操作类型
      */
     public String analyzeDocument(String content, String question) {
-        // 截断过长文本防止token溢出
+        // glm-4-flash上下文较短，截断到8000字避免超时
         String processedContent = content;
-        if (content != null && content.length() > 15000) {
-            processedContent = content.substring(0, 15000) + "\n...(文档内容较长，已截取前15000字)";
+        if (content != null && content.length() > 8000) {
+            processedContent = content.substring(0, 8000) + "\n...(文档内容较长，已截取前8000字)";
         }
         String systemPrompt = "你是一个智能文档处理助手，具备文档分析、编辑和信息提取能力。\n\n"
                 + "当前文档内容如下：\n---\n" + processedContent + "\n---\n\n"
@@ -263,8 +263,8 @@ public class AIService {
      */
     public String editDocumentContent(String content, String instruction) {
         String processedContent = content;
-        if (content != null && content.length() > 15000) {
-            processedContent = content.substring(0, 15000) + "\n...(文档内容较长，已截取前15000字)";
+        if (content != null && content.length() > 8000) {
+            processedContent = content.substring(0, 8000) + "\n...(文档内容较长，已截取前8000字)";
         }
         String systemPrompt = "你是一个高精度文档编辑引擎。用户将提供一个编辑指令，请严格按照指令对文档内容进行修改。\n\n"
                 + "规则：\n"
@@ -284,21 +284,24 @@ public class AIService {
 
     /**
      * AI结构化数据提取 - 用于自动填写表格（核心竞赛功能）
+     * 使用单元格位置(RxCy)精确映射，确保数据填入正确位置
      */
     public String extractStructuredData(String templateDescription, String sourceDocuments) {
-        String systemPrompt = "你是一个高精度的数据提取专家。你的任务是从源文档中提取数据来填充模板。\n\n"
-                + "【重要规则】\n"
-                + "1. 严格按照模板中的字段名提取对应数据\n"
-                + "2. 提取的数据必须准确、来自源文档原文\n"
-                + "3. 如果某字段在源文档中确实找不到，值设为空字符串\n"
-                + "4. 数字类型保持数字格式，不要添加多余文字\n"
-                + "5. 日期保持源文档中的原始格式\n"
-                + "6. 只返回纯JSON，不要包含任何markdown标记或代码块标记\n\n"
-                + "【输出格式】\n"
-                + "直接返回JSON对象: {\"字段名1\": \"值1\", \"字段名2\": \"值2\", ...}";
+        String systemPrompt = "角色：你是一个高精度表格数据填充引擎，从源文档中提取数据并精确填充到模板的指定单元格。\n\n"
+                + "任务：分析模板结构中标记为[RxCy=待填写]的单元格，根据同行/同列已有的标题文字推断该单元格应填什么数据，"
+                + "然后从源文档中找到对应数据。\n\n"
+                + "严格规则：\n"
+                + "1. JSON的key必须使用模板中标记的位置格式 RxCy（如R1C0表示第2行第1列）\n"
+                + "2. 根据模板中同行左侧标签或同列表头推断每个[RxCy=待填写]应填的数据\n"
+                + "3. 提取的值必须来源于源文档原文，禁止编造数据\n"
+                + "4. 数字保持原始格式和单位（如 126.06万亿元、12.5%、14.12亿人）\n"
+                + "5. 找不到对应数据的单元格不要包含在JSON中\n"
+                + "6. 不要填充表头行（通常是第0行），只填充标记了[待填写]的位置\n\n"
+                + "输出格式：直接输出纯JSON对象，不要包含任何markdown标记或代码块。\n"
+                + "示例：{\"R1C0\": \"126.06万亿元\", \"R1C1\": \"14.12亿人\", \"R2C0\": \"5.2%\"}";
 
         String userMessage = "【模板结构】\n" + templateDescription
-                + "\n\n【源文档内容】\n" + sourceDocuments;
+                + "\n\n【源文档数据】\n" + sourceDocuments;
 
         return chat(systemPrompt, userMessage);
     }
@@ -307,17 +310,14 @@ public class AIService {
      * AI提取关键信息摘要
      */
     public String extractKeyInfo(String documentContent) {
-        String systemPrompt = "你是一名高效精准的文档信息提取专家。请从文档中快速提取以下关键信息，以结构化格式输出：\n"
+        String systemPrompt = "角色：文档信息提取专家。\n\n"
+                + "任务：从文档中快速提取以下关键信息，以结构化格式输出：\n"
                 + "1. 文档类型（通知、报告、公报、合同、简历、统计数据等）\n"
                 + "2. 文档主题/标题\n"
                 + "3. 关键实体（人名、机构名、地名等）\n"
-                + "4. 关键数值数据（日期、金额、百分比、统计数字等，保留原始数值和单位）\n"
-                + "5. 核心内容摘要（200字以内，涵盖文档主旨和要点）\n\n"
-                + "要求：\n"
-                + "- 信息必须来自文档原文，不得编造\n"
-                + "- 数字数据务必精确，保留原文格式\n"
-                + "- 以清晰分类的结构化格式输出\n"
-                + "- 输出要全面但精炼，便于后续数据检索和表格填写";
+                + "4. 关键数值数据（日期、金额、百分比、统计数字，保留原文数值和单位）\n"
+                + "5. 核心内容摘要（200字以内）\n\n"
+                + "要求：信息必须来自文档原文，数字数据务必精确，输出简洁清晰。";
         return chat(systemPrompt, documentContent);
     }
 
@@ -326,24 +326,24 @@ public class AIService {
      * 优化提取速度和准确率，提取最全面最简洁的信息
      */
     public String extractDocumentInfo(String rawText, String filename) {
-        // 截断过长文本以加快AI处理速度
+        // glm-4-flash上下文较短，截断到8000字加快处理
         String processedText = rawText;
-        if (rawText.length() > 12000) {
-            processedText = rawText.substring(0, 12000) + "\n...(内容已截断)";
+        if (rawText.length() > 8000) {
+            processedText = rawText.substring(0, 8000) + "\n...(内容已截断)";
         }
 
-        String systemPrompt = "你是高精度文档信息提取引擎。请从文档原文中提取所有关键数据和信息，输出结构化摘要。\n\n"
+        String systemPrompt = "角色：高精度文档信息提取引擎。\n\n"
+                + "任务：从文档原文中提取所有关键数据和信息，输出结构化摘要。\n\n"
                 + "提取规则：\n"
                 + "1. 提取所有数值型数据（统计数字、金额、百分比、年份、日期等），保留精确数值和单位\n"
                 + "2. 提取所有实体信息（机构名称、人名、地名、项目名等）\n"
                 + "3. 提取关键事实和结论\n"
-                + "4. 保持数据的上下文关联（如：某指标=某数值）\n"
-                + "5. 输出格式清晰、分类明确，便于后续自动匹配和表格填写\n\n"
-                + "输出格式要求：\n"
+                + "4. 保持数据的上下文关联（如：某指标=某数值）\n\n"
+                + "输出格式：\n"
                 + "- 使用分类标题组织信息\n"
                 + "- 每条信息独立一行\n"
                 + "- 数值数据格式：指标名称：数值 单位\n"
-                + "- 不要输出无关说明，只输出提取的信息";
+                + "- 只输出提取的信息，不输出无关说明";
 
         String userMessage = "文档名：" + filename + "\n\n文档原文：\n" + processedText;
         return chat(systemPrompt, userMessage);

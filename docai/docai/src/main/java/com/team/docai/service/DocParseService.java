@@ -203,46 +203,43 @@ public class DocParseService {
 
     /**
      * 分析Excel模板结构，提取表头和需要填写的单元格
+     * 使用 [RxCy=待填写] 标记空单元格的精确位置，便于AI定位填充
      */
     public String analyzeExcelTemplate(InputStream is) throws IOException {
         try (XSSFWorkbook workbook = new XSSFWorkbook(is)) {
             StringBuilder sb = new StringBuilder();
             sb.append("【Excel模板结构】\n");
+            sb.append("说明：[RxCy=待填写]表示第x行第y列的单元格需要填充数据。\n\n");
 
             for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
                 XSSFSheet sheet = workbook.getSheetAt(i);
-                sb.append("\nSheet: ").append(sheet.getSheetName()).append("\n");
+                sb.append("Sheet: ").append(sheet.getSheetName()).append("\n");
 
-                List<String> headers = new ArrayList<>();
-
-                for (var row : sheet) {
-                    List<String> cellValues = new ArrayList<>();
-                    boolean hasData = false;
-
-                    for (var cell : row) {
-                        String value = getCellValueAsString(cell);
-                        cellValues.add(value.isEmpty() ? "[待填写]" : value);
-                        if (!value.isEmpty()) hasData = true;
-                    }
-
-                    if (row.getRowNum() == 0 && hasData) {
-                        headers = cellValues;
-                        sb.append("表头: ").append(String.join(" | ", cellValues)).append("\n");
-                    } else {
-                        sb.append("行").append(row.getRowNum()).append(": ")
-                                .append(String.join(" | ", cellValues)).append("\n");
+                // 计算最大列数（遍历所有行取最大值）
+                int maxCol = 0;
+                for (int rowIdx = 0; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
+                    var row = sheet.getRow(rowIdx);
+                    if (row != null && row.getLastCellNum() > maxCol) {
+                        maxCol = row.getLastCellNum();
                     }
                 }
 
-                if (!headers.isEmpty()) {
-                    sb.append("\n【列字段说明】\n");
-                    for (int h = 0; h < headers.size(); h++) {
-                        String header = headers.get(h).replace("[待填写]", "");
-                        if (!header.isEmpty()) {
-                            sb.append("列").append(h).append(": ").append(header).append("\n");
+                // 使用列索引精确遍历，确保不遗漏空单元格
+                for (int rowIdx = 0; rowIdx <= sheet.getLastRowNum(); rowIdx++) {
+                    var row = sheet.getRow(rowIdx);
+                    List<String> cellDescs = new ArrayList<>();
+                    for (int colIdx = 0; colIdx < maxCol; colIdx++) {
+                        var cell = (row != null) ? row.getCell(colIdx) : null;
+                        String value = getCellValueAsString(cell);
+                        if (value.isEmpty()) {
+                            cellDescs.add("[R" + rowIdx + "C" + colIdx + "=待填写]");
+                        } else {
+                            cellDescs.add(value);
                         }
                     }
+                    sb.append("行").append(rowIdx).append(": ").append(String.join(" | ", cellDescs)).append("\n");
                 }
+                sb.append("\n");
             }
 
             return sb.toString();
@@ -285,13 +282,13 @@ public class DocParseService {
     }
 
     /**
-     * 填充Excel模板 - 填充空单元格和替换占位符
+     * 填充Excel模板 - 基于单元格位置(RxCy)精确填充
      */
     public byte[] fillExcelTemplate(InputStream templateIs, Map<String, String> data) throws IOException {
         try (XSSFWorkbook workbook = new XSSFWorkbook(templateIs)) {
             for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
                 XSSFSheet sheet = workbook.getSheetAt(i);
-                fillExcelSheet(sheet, data);
+                fillExcelSheetByPosition(sheet, data);
             }
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -392,51 +389,102 @@ public class DocParseService {
         }
     }
 
-    private void fillExcelSheet(XSSFSheet sheet, Map<String, String> data) {
-        Pattern pattern = Pattern.compile("\\{\\{(.+?)\\}\\}");
+    /**
+     * 基于单元格位置(RxCy)精确填充Excel工作表
+     * 支持两种key格式：
+     *   - 位置格式: "R{row}C{col}" (优先)
+     *   - 表头名称: 作为兜底匹配
+     */
+    private void fillExcelSheetByPosition(XSSFSheet sheet, Map<String, String> data) {
+        Pattern posPattern = Pattern.compile("R(\\d+)C(\\d+)");
 
-        // 获取表头
-        List<String> headers = new ArrayList<>();
-        var headerRow = sheet.getRow(0);
-        if (headerRow != null) {
-            for (var cell : headerRow) {
-                headers.add(getCellValueAsString(cell));
+        // 第一步：按位置精确填充 (RxCy 格式)
+        for (Map.Entry<String, String> entry : data.entrySet()) {
+            String key = entry.getKey().trim();
+            String value = entry.getValue();
+            if (value == null || value.isEmpty()) continue;
+
+            Matcher m = posPattern.matcher(key);
+            if (m.matches()) {
+                int rowIdx = Integer.parseInt(m.group(1));
+                int colIdx = Integer.parseInt(m.group(2));
+
+                XSSFRow row = sheet.getRow(rowIdx);
+                if (row == null) row = sheet.createRow(rowIdx);
+                XSSFCell cell = row.getCell(colIdx);
+                if (cell == null) cell = row.createCell(colIdx);
+
+                setCellSmartValue(cell, value);
             }
         }
 
-        // 遍历所有单元格
-        for (var row : sheet) {
-            for (var cell : row) {
-                String value = getCellValueAsString(cell);
+        // 第二步：表头名称兜底匹配（处理非位置格式的key）
+        XSSFRow headerRow = sheet.getRow(0);
+        if (headerRow == null) return;
 
-                // 替换占位符
-                Matcher matcher = pattern.matcher(value);
-                if (matcher.find()) {
-                    StringBuffer sb = new StringBuffer();
-                    matcher.reset();
-                    while (matcher.find()) {
-                        String fieldName = matcher.group(1).trim();
-                        String replacement = data.getOrDefault(fieldName, "");
-                        matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
-                    }
-                    matcher.appendTail(sb);
-                    cell.setCellValue(sb.toString());
-                }
-                // 如果为空且有对应表头，从数据填充
-                else if (value.isEmpty() && row.getRowNum() > 0) {
-                    int colIdx = cell.getColumnIndex();
-                    if (colIdx < headers.size() && data.containsKey(headers.get(colIdx))) {
-                        String fillValue = data.get(headers.get(colIdx));
-                        // 尝试数值类型
-                        try {
-                            double num = Double.parseDouble(fillValue);
-                            cell.setCellValue(num);
-                        } catch (NumberFormatException e) {
-                            cell.setCellValue(fillValue);
-                        }
+        // 构建 列索引→表头名 的映射
+        int maxCol = headerRow.getLastCellNum();
+        Map<String, Integer> headerToCol = new LinkedHashMap<>();
+        for (int colIdx = 0; colIdx < maxCol; colIdx++) {
+            XSSFCell hCell = headerRow.getCell(colIdx);
+            String hVal = getCellValueAsString(hCell).trim();
+            if (!hVal.isEmpty()) {
+                headerToCol.put(hVal, colIdx);
+            }
+        }
+
+        for (Map.Entry<String, String> entry : data.entrySet()) {
+            String key = entry.getKey().trim();
+            String value = entry.getValue();
+            if (value == null || value.isEmpty()) continue;
+            if (posPattern.matcher(key).matches()) continue; // 已处理
+
+            // 精确匹配表头名
+            Integer colIdx = headerToCol.get(key);
+            if (colIdx == null) {
+                // 模糊匹配：去除括号和空格后比较
+                String keyNorm = key.replaceAll("[\\s()（）\\[\\]【】]", "");
+                for (Map.Entry<String, Integer> he : headerToCol.entrySet()) {
+                    String hNorm = he.getKey().replaceAll("[\\s()（）\\[\\]【】]", "");
+                    if (hNorm.equalsIgnoreCase(keyNorm) || hNorm.contains(keyNorm) || keyNorm.contains(hNorm)) {
+                        colIdx = he.getValue();
+                        break;
                     }
                 }
             }
+
+            if (colIdx != null) {
+                // 填充第一个空行（行号>0）
+                for (int rowIdx = 1; rowIdx <= sheet.getLastRowNum() + 1; rowIdx++) {
+                    XSSFRow row = sheet.getRow(rowIdx);
+                    if (row == null) row = sheet.createRow(rowIdx);
+                    XSSFCell cell = row.getCell(colIdx);
+                    String existing = getCellValueAsString(cell);
+                    if (existing.isEmpty()) {
+                        if (cell == null) cell = row.createCell(colIdx);
+                        setCellSmartValue(cell, value);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /** 智能设置单元格值：尝试数值、保持百分比文本 */
+    private void setCellSmartValue(XSSFCell cell, String value) {
+        if (value == null || value.isEmpty()) return;
+        // 百分比保持文本
+        if (value.contains("%") || value.contains("％")) {
+            cell.setCellValue(value);
+            return;
+        }
+        // 尝试纯数值
+        String numStr = value.replaceAll("[,，\\s]", "");
+        try {
+            double num = Double.parseDouble(numStr);
+            cell.setCellValue(num);
+        } catch (NumberFormatException e) {
+            cell.setCellValue(value);
         }
     }
 
