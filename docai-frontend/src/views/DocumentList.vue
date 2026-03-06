@@ -220,8 +220,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { getDocuments, deleteDocument, batchDeleteDocuments, aiExtractInfo, uploadDocument } from '../api'
+import { ref, onMounted, computed } from 'vue'
+import { useDocumentStore } from '../store/documentStore'
+import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
@@ -230,13 +231,16 @@ import {
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
-const documents = ref([])
+const docStore = useDocumentStore()
+
+// Make state and getters reactive
+const { documents, total, loading } = storeToRefs(docStore)
+
+// Local state for UI controls
 const keyword = ref('')
 const filterType = ref('')
-const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = ref(20)
-const total = ref(0)
 const selectedIds = ref([])
 
 // 上传相关
@@ -263,22 +267,19 @@ const typeTagMap = { docx: 'primary', xlsx: 'success', txt: 'info', md: 'warning
 const validExts = ['.docx', '.xlsx', '.txt', '.md']
 const maxFileSize = 100 * 1024 * 1024
 
-const loadDocuments = async () => {
-  loading.value = true
-  try {
-    const res = await getDocuments({
-      page: currentPage.value,
-      size: pageSize.value,
-      keyword: keyword.value,
-      fileType: filterType.value
-    })
-    documents.value = res.data?.records || []
-    total.value = res.data?.total || 0
-  } catch (e) {
-    ElMessage.error('加载文档列表失败')
-  } finally {
-    loading.value = false
-  }
+const loadDocuments = async (force = false) => {
+  await docStore.fetchDocuments({
+    page: currentPage.value,
+    size: pageSize.value,
+    keyword: keyword.value,
+    fileType: filterType.value,
+    force
+  })
+}
+
+const handlePageChange = (page) => {
+  currentPage.value = page
+  loadDocuments()
 }
 
 const handleSelectionChange = (selection) => {
@@ -398,6 +399,7 @@ const doUpload = async () => {
     try {
       const formData = new FormData()
       formData.append('file', fileItem.raw)
+      // We can keep the direct API call here, but refresh using the store action
       await uploadDocument(formData)
       successCount++
     } catch (e) {
@@ -408,14 +410,15 @@ const doUpload = async () => {
 
   uploading.value = false
   if (successCount > 0) {
-    ElMessage.success(`成功上传 ${successCount} 个文档，已自动提取文本信息`)
+    // Use the store action to refresh data
+    await docStore.handleUploadSuccess()
   }
   if (failCount > 0) {
     ElMessage.warning(`${failCount} 个文档上传失败`)
   }
   showUploadDialog.value = false
   uploadFileList.value = []
-  loadDocuments()
+  // No need to call loadDocuments() directly, store action handles it
 }
 
 const goChat = (row) => router.push(`/ai-chat?docId=${row.id}`)
@@ -453,9 +456,9 @@ const deleteDoc = async (row) => {
       confirmButtonText: '删除',
       cancelButtonText: '取消'
     })
-    await deleteDocument(row.id)
-    ElMessage.success('删除成功')
-    loadDocuments()
+    // Use the store action
+    await docStore.deleteDocument(row.id)
+    // The list will refresh automatically
   } catch (e) { /* cancelled */ }
 }
 
@@ -466,10 +469,10 @@ const batchDelete = async () => {
       confirmButtonText: '全部删除',
       cancelButtonText: '取消'
     })
-    await batchDeleteDocuments(selectedIds.value)
-    ElMessage.success('批量删除成功')
+    // Use the store action
+    await docStore.batchDeleteDocuments(selectedIds.value)
     selectedIds.value = []
-    loadDocuments()
+    // The list will refresh automatically
   } catch (e) { /* cancelled */ }
 }
 
@@ -482,7 +485,10 @@ const formatSize = (size) => {
 
 const formatDate = (d) => d ? d.replace('T', ' ').substring(0, 16) : '-'
 
-onMounted(loadDocuments)
+onMounted(() => {
+  // Initial load when component is mounted
+  loadDocuments()
+})
 </script>
 
 <style scoped>

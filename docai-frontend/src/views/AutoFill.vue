@@ -187,7 +187,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getDocuments, autoFillAuto, autoFillAutoBatch, downloadBlob } from '../api'
+import { useDocumentStore } from '../store/documentStore'
+import { storeToRefs } from 'pinia'
+import { autoFillAuto, autoFillAutoBatch, downloadBlob } from '../api'
 import { ElMessage } from 'element-plus'
 import {
   UploadFilled, MagicStick, Download, InfoFilled, WarningFilled, RefreshRight,
@@ -195,15 +197,16 @@ import {
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
+const docStore = useDocumentStore()
+
+// Get reactive state and getters from the store
+const { docCount, extractedCount, loading: loadingStats } = storeToRefs(docStore)
 
 const ACCEPTED_EXTENSIONS = ['.docx', '.xlsx']
 
 // State
 const currentStep = ref(0)
 const templateFiles = ref([])
-const loadingStats = ref(false)
-const docCount = ref(0)
-const extractedCount = ref(0)
 
 // Fill state
 const fillProgress = ref(0)
@@ -225,16 +228,9 @@ const formatProgress = (percentage) => {
 
 // Methods
 const loadStats = async () => {
-  loadingStats.value = true
-  try {
-    const res = await getDocuments({ size: 500 })
-    const docs = res.data?.records || []
-    docCount.value = docs.length
-    extractedCount.value = docs.filter(d => d.contentText && d.contentText.trim()).length
-  } catch (e) {
-    console.error('加载文档统计失败', e)
-  } finally {
-    loadingStats.value = false
+  // Trigger fetch only if cache is invalid
+  if (!docStore.isCacheValid) {
+    await docStore.fetchDocuments({ size: 500 }) // Fetch a larger batch for accurate counting
   }
 }
 
@@ -397,7 +393,7 @@ const resetAll = () => {
   fillProgress.value = 0
   fillPhase.value = 0
   resultFiles.value = []
-  loadStats()
+  // No need to call loadStats(), data is already in store or will be loaded on next visit
 }
 
 onMounted(loadStats)
