@@ -37,7 +37,8 @@ public class DocumentController {
     @Value("${file.upload-dir}")
     private String uploadDir;
 
-    private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(".docx", ".xlsx", ".txt", ".md");
+    private static final Set<String> SUPPORTED_EXTENSIONS = Set.of(
+            ".docx", ".xlsx", ".txt", ".md", ".pdf", ".doc", ".xls", ".pptx", ".ppt", ".csv", ".html");
 
     /** 上传单个文档 */
     @PostMapping("/upload")

@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/Java-17-orange?style=flat-square&logo=openjdk" />
   <img src="https://img.shields.io/badge/Spring%20Boot-3.5-green?style=flat-square&logo=spring-boot" />
   <img src="https://img.shields.io/badge/Vue-3-brightgreen?style=flat-square&logo=vue.js" />
-  <img src="https://img.shields.io/badge/AI-GLM--4--Flash-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/AI-GLM--4.7--Flash-blue?style=flat-square" />
 </p>
 
 ---
@@ -39,7 +39,7 @@
 |  | Controller Layer (REST API)                   |  |
 |  |----------------------------------------------+  |
 |  | Service Layer                                 |  |
-|  |  |-- AIService (智谱GLM-4-Flash + 并发控制)   |  |
+|  |  |-- AIService (智谱GLM-4.7-Flash + 并发控制) |  |
 |  |  |-- DocParseService (多格式解析+模板填充)    |  |
 |  |  +-- AutoFillService (自动填表编排引擎)       |  |
 |  |----------------------------------------------+  |
@@ -50,8 +50,8 @@
 +-------------------+--------------------------------+
                     |
          +----------+----------+
-         |  智谱AI GLM-4-Flash |
-         |  (大语言模型)        |
+         | 智谱AI GLM-4.7-Flash|
+         | (大语言模型)         |
          +---------------------+
 ```
 
@@ -106,7 +106,7 @@
 | | MyBatis-Plus | 最新 | ORM 框架 |
 | | Spring Security | 最新 | JWT 认证 + CORS |
 | | Apache POI | 5.5.1 | Office 文档读写 |
-| **AI** | 智谱 GLM-4-Flash | - | 免费大语言模型 |
+| **AI** | 智谱 GLM-4.7-Flash | - | 免费大语言模型 (200K上下文) |
 | | oapi-java-sdk | 最新 | 智谱AI官方SDK |
 | **数据库** | MySQL | 8.0 | 关系型数据库 |
 
@@ -269,7 +269,7 @@ Intelligent-Document-Processing-System/
 ## 竞赛创新点
 
 ### 创新点一：AI 驱动的智能填表引擎
-基于大语言模型（GLM-4-Flash）构建端到端自动填表流水线：源文档解析 -> AI 结构化提取 -> 模板智能匹配 -> 自动填充。突破传统基于规则的填表方式，能够理解自然语言文档内容并精准映射到模板字段。
+基于大语言模型（GLM-4.7-Flash）构建端到端自动填表流水线：源文档解析 -> AI 结构化提取 -> 模板智能匹配 -> 自动填充。突破传统基于规则的填表方式，能够理解自然语言文档内容并精准映射到模板字段。
 
 ### 创新点二：上传即提取的智能信息抽取
 文档上传时即刻通过 AI 大模型从原始文本中提取结构化关键信息（数值数据、实体信息、关键事实等），而非简单存储原始文本。经过优化的 Prompt 设计确保提取数据的精确性和完整性，为后续自动填表提供高质量数据源。

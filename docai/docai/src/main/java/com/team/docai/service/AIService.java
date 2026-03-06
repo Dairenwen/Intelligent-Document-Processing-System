@@ -3,12 +3,21 @@ package com.team.docai.service;
 import com.zhipu.oapi.ClientV4;
 import com.zhipu.oapi.Constants;
 import com.zhipu.oapi.service.v4.model.*;
+import cn.hutool.http.HttpRequest;
+import cn.hutool.http.HttpResponse;
+import cn.hutool.json.JSONArray;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -20,7 +29,7 @@ public class AIService {
     @Value("${ai.api-key}")
     private String apiKey;
 
-    @Value("${ai.model:glm-4-flash}")
+    @Value("${ai.model:glm-4.7-flash}")
     private String model;
 
     @Value("${ai.max-retries:3}")
@@ -28,15 +37,22 @@ public class AIService {
 
     private ClientV4 client;
 
+    private static final String CHAT_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+
     /** 并发限制：最多同时3个AI请求，防止API限流 */
     private final Semaphore aiSemaphore = new Semaphore(3);
 
     @PostConstruct
     public void init() {
-        client = new ClientV4.Builder(apiKey)
-                .networkConfig(60, 120, 120, 120, TimeUnit.SECONDS)
-                .build();
-        log.info("智谱AI客户端初始化完成, model={}", model);
+        try {
+            client = new ClientV4.Builder(apiKey)
+                    .networkConfig(60, 120, 120, 120, TimeUnit.SECONDS)
+                    .build();
+            log.info("智谱AI客户端初始化完成, model={}", model);
+        } catch (Exception e) {
+            log.warn("SDK客户端初始化失败，将使用HTTP直连模式: {}", e.getMessage());
+            client = null;
+        }
     }
 
     /**
@@ -51,53 +67,66 @@ public class AIService {
 
     /**
      * AI调用带重试机制和并发控制 - 核心方法
+     * 优先使用SDK，失败后自动回退到HTTP直连
      */
     private String invokeWithRetry(List<ChatMessage> messages) {
         Exception lastException = null;
         boolean acquired = false;
         try {
-            // 获取信号量，最多等待60秒
             acquired = aiSemaphore.tryAcquire(60, TimeUnit.SECONDS);
             if (!acquired) {
                 throw new RuntimeException("AI服务繁忙，请稍后重试（并发请求过多）");
             }
 
-            for (int attempt = 1; attempt <= maxRetries; attempt++) {
-                try {
-                    ChatCompletionRequest request = ChatCompletionRequest.builder()
-                            .model(model)
-                            .stream(Boolean.FALSE)
-                            .invokeMethod(Constants.invokeMethod)
-                            .messages(messages)
-                            .build();
+            // 尝试SDK调用
+            if (client != null) {
+                for (int attempt = 1; attempt <= maxRetries; attempt++) {
+                    try {
+                        ChatCompletionRequest request = ChatCompletionRequest.builder()
+                                .model(model)
+                                .stream(Boolean.FALSE)
+                                .invokeMethod(Constants.invokeMethod)
+                                .messages(messages)
+                                .build();
 
-                    ModelApiResponse response = client.invokeModelApi(request);
-                    if (response != null && response.getData() != null
-                            && response.getData().getChoices() != null
-                            && !response.getData().getChoices().isEmpty()) {
-                        var choice = response.getData().getChoices().get(0);
-                        if (choice.getMessage() != null && choice.getMessage().getContent() != null) {
-                            String content = choice.getMessage().getContent().toString();
-                            log.info("AI调用成功, attempt={}, responseLength={}", attempt, content.length());
-                            return content;
+                        ModelApiResponse response = client.invokeModelApi(request);
+                        if (response != null && response.getData() != null
+                                && response.getData().getChoices() != null
+                                && !response.getData().getChoices().isEmpty()) {
+                            var choice = response.getData().getChoices().get(0);
+                            if (choice.getMessage() != null && choice.getMessage().getContent() != null) {
+                                String content = choice.getMessage().getContent().toString();
+                                log.info("AI-SDK调用成功, attempt={}, responseLength={}", attempt, content.length());
+                                return content;
+                            }
                         }
-                    }
-                    log.warn("AI返回空响应, attempt={}", attempt);
-                } catch (Exception e) {
-                    lastException = e;
-                    log.warn("AI调用失败, attempt={}/{}, error={}", attempt, maxRetries, e.getMessage());
-                    if (attempt < maxRetries) {
-                        try {
-                            // 指数退避：2s, 4s, 8s...
-                            long waitMs = (long) Math.pow(2, attempt) * 1000;
-                            Thread.sleep(waitMs);
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            break;
+                        log.warn("AI-SDK返回空响应, attempt={}", attempt);
+                    } catch (Exception e) {
+                        lastException = e;
+                        log.warn("AI-SDK调用失败, attempt={}/{}, error={}", attempt, maxRetries, e.getMessage());
+                        if (attempt < maxRetries) {
+                            Thread.sleep((long) Math.pow(2, attempt) * 1000);
                         }
                     }
                 }
+                log.warn("SDK方式全部失败，回退到HTTP直连模式");
             }
+
+            // HTTP直连回退
+            for (int attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    String result = invokeViaHttp(messages);
+                    log.info("AI-HTTP直连成功, attempt={}, responseLength={}", attempt, result.length());
+                    return result;
+                } catch (Exception e) {
+                    lastException = e;
+                    log.warn("AI-HTTP直连失败, attempt={}/{}, error={}", attempt, maxRetries, e.getMessage());
+                    if (attempt < maxRetries) {
+                        Thread.sleep((long) Math.pow(2, attempt) * 1000);
+                    }
+                }
+            }
+
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("AI服务调用被中断");
@@ -109,6 +138,86 @@ public class AIService {
         log.error("AI调用全部失败, maxRetries={}", maxRetries, lastException);
         throw new RuntimeException("AI服务暂时不可用，请稍后重试: " +
                 (lastException != null ? lastException.getMessage() : "未知错误"));
+    }
+
+    /**
+     * HTTP直连方式调用智谱AI（回退方案）
+     */
+    private String invokeViaHttp(List<ChatMessage> messages) {
+        String token = generateApiToken();
+
+        JSONArray msgArray = new JSONArray();
+        for (ChatMessage msg : messages) {
+            JSONObject msgObj = new JSONObject();
+            msgObj.set("role", msg.getRole());
+            msgObj.set("content", msg.getContent());
+            msgArray.add(msgObj);
+        }
+
+        JSONObject body = new JSONObject();
+        body.set("model", model);
+        body.set("messages", msgArray);
+
+        HttpResponse response = HttpRequest.post(CHAT_API_URL)
+                .header("Authorization", "Bearer " + token)
+                .header("Content-Type", "application/json")
+                .body(body.toString())
+                .timeout(120000)
+                .execute();
+
+        if (response.getStatus() != 200) {
+            throw new RuntimeException("HTTP直连错误: status=" + response.getStatus()
+                    + ", body=" + response.body());
+        }
+
+        JSONObject json = JSONUtil.parseObj(response.body());
+        JSONArray choices = json.getJSONArray("choices");
+        if (choices != null && !choices.isEmpty()) {
+            JSONObject choice = choices.getJSONObject(0);
+            JSONObject message = choice.getJSONObject("message");
+            if (message != null) {
+                String content = message.getStr("content");
+                if (content != null && !content.isBlank()) {
+                    return content;
+                }
+            }
+        }
+        throw new RuntimeException("HTTP直连返回空响应: " + response.body());
+    }
+
+    /**
+     * 生成智谱AI API认证Token (JWT格式)
+     */
+    private String generateApiToken() {
+        String[] parts = apiKey.split("\\.", 2);
+        if (parts.length != 2) {
+            throw new RuntimeException("API Key格式无效");
+        }
+        String id = parts[0];
+        String secret = parts[1];
+
+        long nowMs = System.currentTimeMillis();
+        long expMs = nowMs + 3600 * 1000;
+
+        String headerJson = "{\"alg\":\"HS256\",\"sign_type\":\"SIGN\"}";
+        String payloadJson = String.format(
+                "{\"api_key\":\"%s\",\"exp\":%d,\"timestamp\":%d}", id, expMs, nowMs);
+
+        String header = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(headerJson.getBytes(StandardCharsets.UTF_8));
+        String payload = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(payloadJson.getBytes(StandardCharsets.UTF_8));
+
+        String content = header + "." + payload;
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            String signature = Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(mac.doFinal(content.getBytes(StandardCharsets.UTF_8)));
+            return content + "." + signature;
+        } catch (Exception e) {
+            throw new RuntimeException("JWT Token生成失败", e);
+        }
     }
 
     /** AI生成公文 */

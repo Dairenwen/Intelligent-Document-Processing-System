@@ -169,13 +169,13 @@
           :auto-upload="false"
           :on-change="handleFileChange"
           :on-remove="handleFileRemove"
-          accept=".docx,.xlsx,.txt,.md"
+          accept=".docx,.xlsx,.txt,.md,.pdf,.doc,.xls,.pptx,.ppt,.csv,.html"
           :file-list="uploadFileList"
         >
           <el-icon :size="48" class="el-icon--upload"><UploadFilled /></el-icon>
           <div class="el-upload__text">将文件拖到此处，或 <em>点击选择</em></div>
           <template #tip>
-            <div class="el-upload__tip">支持 .docx / .xlsx / .txt / .md 格式，单个文件不超过100MB</div>
+            <div class="el-upload__tip">支持 .docx / .xlsx / .txt / .md / .pdf / .doc / .pptx / .csv 等格式，单个文件不超过100MB</div>
           </template>
         </el-upload>
       </div>
