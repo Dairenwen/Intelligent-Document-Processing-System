@@ -43,6 +43,59 @@
       </el-tag>
     </div>
 
+    <!-- 上传队列显示 -->
+    <div class="upload-queue-container card" v-if="docStore.uploadQueue.length > 0">
+      <div class="queue-header">
+        <div class="queue-title">
+          <span v-if="docStore.isUploading" class="status-badge uploading">
+            <el-icon class="is-loading"><Loading /></el-icon> 上传中
+          </span>
+          <span v-else class="status-badge completed">已完成</span>
+          <span class="queue-count">{{ docStore.uploadQueue.length }} 个文件</span>
+        </div>
+        <el-button size="small" type="danger" plain @click="clearUploadQueue" v-if="!docStore.isUploading">
+          <el-icon><Delete /></el-icon> 清空
+        </el-button>
+      </div>
+      
+      <div class="queue-items">
+        <div class="queue-item" v-for="item in docStore.uploadQueue" :key="item.id">
+          <div class="item-info">
+            <el-icon class="file-icon">
+              <Document />
+            </el-icon>
+            <div class="item-details">
+              <div class="item-name">{{ item.fileName }}</div>
+              <div class="item-size">{{ formatSize(item.fileSize) }}</div>
+            </div>
+          </div>
+          <div class="item-progress">
+            <el-progress 
+              :percentage="item.progress" 
+              :status="item.status === 'success' ? 'success' : item.status === 'failed' ? 'exception' : item.status === 'cancelled' ? 'warning' : undefined"
+              :show-text="false"
+              :stroke-width="6"
+            />
+            <span v-if="item.status === 'success'" class="status-text success">✓ 成功</span>
+            <span v-else-if="item.status === 'failed'" class="status-text failed">✗ 失败</span>
+            <span v-else-if="item.status === 'cancelled'" class="status-text cancelled">已取消</span>
+            <span v-else class="progress-percent">{{ item.progress }}%</span>
+            
+            <el-button 
+              size="small" 
+              type="danger" 
+              text 
+              @click="cancelUploadItem(item.id)"
+              v-if="item.status === 'uploading' || item.status === 'pending' || item.phase === 'extracting'"
+              class="cancel-btn"
+            >
+              <el-icon><Close /></el-icon>
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 文档表格 -->
     <div
       class="table-wrapper card"
@@ -160,7 +213,7 @@
       </div>
       <template #footer>
         <el-button @click="showUploadDialog = false">取消</el-button>
-        <el-button type="primary" @click="doUpload" :loading="uploading" :disabled="uploadFileList.length === 0">
+        <el-button type="primary" @click="doUpload" :disabled="uploadFileList.length === 0">
           <el-icon><UploadFilled /></el-icon> 上传并提取信息
         </el-button>
       </template>
@@ -181,15 +234,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useDocumentStore } from '../store/documentStore'
 import { uploadDocument } from '../api'
+import { CancelToken } from '../api/request'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
   Search, UploadFilled, Download, Delete, ChatLineRound,
-  Refresh, View, Document, Grid, EditPen
+  Refresh, View, Document, Grid, EditPen, Loading, Close
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -208,7 +262,6 @@ const selectedIds = ref([])
 // 上传相关
 const showUploadDialog = ref(false)
 const uploadFileList = ref([])
-const uploading = ref(false)
 const uploadRef = ref(null)
 const dragActive = ref(false)
 const dragDepth = ref(0)
@@ -221,6 +274,7 @@ const viewDocContent = ref('')
 const typeTagMap = { docx: 'primary', xlsx: 'success', txt: 'info', md: 'warning' }
 const validExts = ['.docx', '.xlsx', '.txt', '.md']
 const maxFileSize = 100 * 1024 * 1024
+const extractTimerMap = new Map()
 
 const loadDocuments = async (force = false) => {
   await docStore.fetchDocuments({
@@ -346,39 +400,180 @@ const onListDrop = (event) => {
 // 执行上传
 const doUpload = async () => {
   if (uploadFileList.value.length === 0) return
-  uploading.value = true
-  let successCount = 0
-  let failCount = 0
-
-  for (const fileItem of uploadFileList.value) {
-    try {
-      const formData = new FormData()
-      formData.append('file', fileItem.raw)
-      // We can keep the direct API call here, but refresh using the store action
-      await uploadDocument(formData)
-      successCount++
-    } catch (e) {
-      failCount++
-      console.error('上传失败:', fileItem.name, e)
-    }
-  }
-
-  uploading.value = false
-  if (successCount > 0) {
-    // Use the store action to refresh data
-    await docStore.handleUploadSuccess()
-  }
-  if (failCount > 0) {
-    ElMessage.warning(`${failCount} 个文档上传失败`)
-  }
+  
+  // 立即关闭上传对话框
   showUploadDialog.value = false
+  
+  // 获取文件对象列表
+  const filesToUpload = uploadFileList.value.map(item => item.raw || item)
+  
+  // 将文件加入上传队列
+  docStore.addToUploadQueue(filesToUpload)
+  
+  // 清空选文件列表
   uploadFileList.value = []
-  // No need to call loadDocuments() directly, store action handles it
+  if (uploadRef.value) {
+    uploadRef.value.clearFiles()
+  }
+  
+  // 开始异步上传处理
+  startBackgroundUpload()
 }
 
 const goChat = (row) => router.push(`/ai-chat?docId=${row.id}`)
 
 const downloadDoc = (row) => window.open(`/api/documents/${row.id}/download`)
+
+// 后台异步上传处理
+const startBackgroundUpload = async () => {
+  if (docStore.uploadQueue.length === 0) return
+  
+  docStore.setUploading(true)
+  let successCount = 0
+  let failCount = 0
+  const uploadIds = docStore.uploadQueue.map(item => item.id)
+  
+  // 并发上传所有文件（或逐个上传，取决于后端能力）
+  for (const uploadId of uploadIds) {
+    // 跳过已取消或已完成的项
+    const queueItem = docStore.uploadQueue.find(q => q.id === uploadId)
+    if (!queueItem || queueItem.status === 'cancelled') continue
+    
+    // 更新状态为上传中
+    docStore.updateUploadStatus(uploadId, 'uploading')
+    docStore.updateUploadTransferProgress(uploadId, 0)
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', queueItem.fileItem)
+      
+      // 创建取消令牌
+      let cancelFunc
+      const cancelToken = new CancelToken((c) => {
+        cancelFunc = c
+      })
+      
+      // 在store中注册取消函数
+      docStore.registerCancelToken(uploadId, { cancel: cancelFunc })
+      
+      // 上传文件
+      await uploadDocument(formData, (progressEvent) => {
+        if (progressEvent.total > 0) {
+          const uploadPercent = Math.min(100, Math.round((progressEvent.loaded / progressEvent.total) * 100))
+          docStore.updateUploadTransferProgress(uploadId, uploadPercent)
+
+          // 上传达到100%后，进入提取阶段(50%-100%)的模拟增长
+          if (uploadPercent >= 100) {
+            docStore.setExtracting(uploadId)
+            ensureExtractSimulation(uploadId)
+          }
+        }
+      }, cancelToken)
+      
+      stopExtractSimulation(uploadId)
+      await smoothFinishExtraction(uploadId)
+      docStore.updateUploadStatus(uploadId, 'success')
+      successCount++
+      ElMessage.success(`${queueItem.fileName} 上传成功`)
+    } catch (e) {
+      stopExtractSimulation(uploadId)
+      if (e.message === '用户取消上传') {
+        // 用户取消，状态已在cancelUpload中设置
+        ElMessage.info(`${queueItem.fileName} 已取消`)
+      } else {
+        docStore.updateUploadStatus(uploadId, 'failed', e.message)
+        failCount++
+        console.error('上传失败:', queueItem.fileName, e)
+        ElMessage.error(`${queueItem.fileName} 上传失败`)
+      }
+    }
+  }
+  
+  docStore.setUploading(false)
+  
+  // 所有上传完成后刷新文档列表
+  if (successCount > 0) {
+    await docStore.fetchDocuments({ ...docStore.lastFilters, force: true })
+  }
+}
+
+const ensureExtractSimulation = (uploadId) => {
+  if (extractTimerMap.has(uploadId)) return
+
+  const timer = window.setInterval(() => {
+    const item = docStore.uploadQueue.find(q => q.id === uploadId)
+    if (!item) {
+      stopExtractSimulation(uploadId)
+      return
+    }
+    if (item.status === 'cancelled' || item.status === 'failed' || item.status === 'success') {
+      stopExtractSimulation(uploadId)
+      return
+    }
+
+    // 提取阶段平滑推进，逐步逼近100%，但在响应返回前不提前到100
+    const current = item.extractProgress || 0
+    const next = Math.min(98, current + Math.max(1, Math.ceil((98 - current) * 0.08)))
+    docStore.updateExtractionProgress(uploadId, next)
+  }, 400)
+
+  extractTimerMap.set(uploadId, timer)
+}
+
+const smoothFinishExtraction = async (uploadId) => {
+  const item = docStore.uploadQueue.find(q => q.id === uploadId)
+  if (!item || item.status === 'cancelled' || item.status === 'failed') return
+
+  docStore.setExtracting(uploadId)
+
+  await new Promise((resolve) => {
+    let current = item.extractProgress || 0
+    if (current >= 100) {
+      resolve()
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      const latest = docStore.uploadQueue.find(q => q.id === uploadId)
+      if (!latest || latest.status === 'cancelled' || latest.status === 'failed') {
+        clearInterval(timer)
+        resolve()
+        return
+      }
+
+      current = Math.min(100, current + (current < 90 ? 3 : 1))
+      docStore.updateExtractionProgress(uploadId, current)
+
+      if (current >= 100) {
+        clearInterval(timer)
+        resolve()
+      }
+    }, 35)
+  })
+}
+
+const stopExtractSimulation = (uploadId) => {
+  const timer = extractTimerMap.get(uploadId)
+  if (timer) {
+    clearInterval(timer)
+    extractTimerMap.delete(uploadId)
+  }
+}
+
+// 取消单个上传
+const cancelUploadItem = (uploadId) => {
+  stopExtractSimulation(uploadId)
+  docStore.cancelUpload(uploadId)
+  ElMessage.info('已取消上传')
+}
+
+// 清空上传队列
+const clearUploadQueue = () => {
+  for (const uploadId of extractTimerMap.keys()) {
+    stopExtractSimulation(uploadId)
+  }
+  docStore.clearUploadQueue()
+}
 
 // 查看已提取的文档内容
 const viewContent = (row) => {
@@ -426,6 +621,12 @@ const formatDate = (d) => d ? d.replace('T', ' ').substring(0, 16) : '-'
 onMounted(() => {
   // Initial load when component is mounted
   loadDocuments()
+})
+
+onBeforeUnmount(() => {
+  for (const uploadId of extractTimerMap.keys()) {
+    stopExtractSimulation(uploadId)
+  }
 })
 </script>
 
@@ -593,4 +794,150 @@ onMounted(() => {
   padding: 20px;
   border-radius: var(--radius-md);
 }
+
+/* Upload Queue Styles */
+.upload-queue-container {
+  padding: 16px 24px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-md);
+}
+
+.queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.queue-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 600;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.status-badge.uploading {
+  background: rgba(79, 70, 229, 0.1);
+  color: var(--primary);
+}
+
+.status-badge.completed {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10B981;
+}
+
+.queue-count {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.queue-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px;
+  background: var(--bg-base);
+  border-radius: 8px;
+  border: 1px solid var(--border-light);
+}
+
+.item-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 200px;
+}
+
+.file-icon {
+  font-size: 24px;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.item-details {
+  min-width: 0;
+}
+
+.item-name {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.item-size {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.item-progress {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.item-progress :deep(.el-progress) {
+  flex: 1;
+  min-width: 150px;
+}
+
+.progress-percent {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 45px;
+  text-align: right;
+}
+
+.status-text {
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 45px;
+  text-align: right;
+}
+
+.status-text.success {
+  color: #10B981;
+}
+
+.status-text.failed {
+  color: #EF4444;
+}
+
+.status-text.cancelled {
+  color: #F59E0B;
+}
+
+.cancel-btn {
+  padding: 4px 8px !important;
+  min-width: auto !important;
+  color: #EF4444;
+}
+
+.cancel-btn:hover {
+  color: #DC2626 !important;
+}
+
 </style>

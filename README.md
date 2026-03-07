@@ -137,6 +137,8 @@ cd docai/docai
 # 修改 src/main/resources/application.yml 中的数据库连接信息（可选）
 mvn spring-boot:run
 # 后端启动在 http://localhost:8080
+Get-Process java -ErrorAction SilentlyContinue | Stop-Process -Force
+#后端运行失败时尝试清理占用进程并重新启动（可选）
 ```
 
 快速验证：浏览器访问 `http://localhost:8080/api/documents`，返回 200 状态码表示正常。

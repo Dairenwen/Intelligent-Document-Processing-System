@@ -2,17 +2,19 @@ import request from './request'
 
 // ==================== 文档管理 ====================
 
-export const uploadDocument = (formData, onProgress) =>
+export const uploadDocument = (formData, onProgress, cancelToken) =>
   request.post('/documents/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    onUploadProgress: onProgress
+    onUploadProgress: onProgress,
+    cancelToken: cancelToken
   })
 
-export const batchUploadDocuments = (formData, onProgress) =>
+export const batchUploadDocuments = (formData, onProgress, cancelToken) =>
   request.post('/documents/upload/batch', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 300000, // 5分钟超时
-    onUploadProgress: onProgress
+    onUploadProgress: onProgress,
+    cancelToken: cancelToken
   })
 
 export const getDocuments = (params) => request.get('/documents', { params })

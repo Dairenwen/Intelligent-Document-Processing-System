@@ -328,7 +328,12 @@ const sidebarCollapsed = ref(false)
 
 // Document state
 const currentDoc = ref(null)
-const currentDocId = ref(route.query.docId ? Number(route.query.docId) : null)
+const parseDocId = (value) => {
+  if (value === undefined || value === null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+const currentDocId = ref(parseDocId(route.query.docId))
 const showDocPicker = ref(false)
 const docSearchKey = ref('')
 const docList = ref([])
@@ -401,9 +406,20 @@ watch(messages, () => {
   saveChatHistory()
 }, { deep: true })
 
+// 同一路由下 docId 变化时刷新关联文档
+watch(() => route.query.docId, async (newDocId) => {
+  const parsed = parseDocId(newDocId)
+  currentDocId.value = parsed
+  if (parsed) {
+    await loadDocument(parsed)
+  } else {
+    currentDoc.value = null
+  }
+})
+
 // Load document by ID
 const loadDocument = async (id) => {
-  if (!id) return
+  if (!id || !Number.isFinite(id)) return
   try {
     const res = await getDocument(id)
     currentDoc.value = res.data
@@ -512,7 +528,8 @@ const sendMessage = async () => {
   await scrollToBottom()
 
   try {
-    const res = await aiChat({ message: userMsg, documentId: currentDocId.value })
+    const linkedDocId = Number.isFinite(currentDocId.value) ? currentDocId.value : null
+    const res = await requestAIChatWithFallback(userMsg, linkedDocId)
     const reply = res.data?.reply || res.data || ''
     lastAIContent.value = reply
     messages.value.push({ role: 'ai', content: reply })
@@ -525,6 +542,46 @@ const sendMessage = async () => {
     loading.value = false
     await scrollToBottom()
   }
+}
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+const isTransientChatError = (err) => {
+  const status = err?.response?.status
+  if (status === 429 || status === 503) return true
+  const msg = err?.message || ''
+  return msg.includes('Network Error') || err?.code === 'ECONNABORTED'
+}
+
+const isDocumentContextError = (err) => {
+  const msg = err?.message || ''
+  return msg.includes('文档不存在') || msg.includes('文档内容为空') || msg.includes('For input string')
+}
+
+const sendChatOnce = async (message, documentId) => {
+  return aiChat({ message, documentId })
+}
+
+const requestAIChatWithFallback = async (message, documentId) => {
+  try {
+    return await sendChatOnce(message, documentId)
+  } catch (err) {
+    // 关联文档不可用时，自动降级为普通对话，避免对话功能整体中断
+    if (documentId && isDocumentContextError(err)) {
+      try {
+        ElMessage.warning('关联文档暂不可用，已切换为普通对话')
+        return await sendChatOnce(message, null)
+      } catch (fallbackErr) {
+        if (!isTransientChatError(fallbackErr)) throw fallbackErr
+      }
+    } else if (!isTransientChatError(err)) {
+      throw err
+    }
+  }
+
+  // 临时连接问题进行一次重试
+  await sleep(700)
+  return await sendChatOnce(message, documentId)
 }
 
 const exportAIResult = async () => {

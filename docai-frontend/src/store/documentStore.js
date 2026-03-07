@@ -4,6 +4,9 @@ import { ElMessage } from 'element-plus'
 
 const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
+// 存储所有上传请求的取消令牌
+const uploadCancelTokens = new Map()
+
 export const useDocumentStore = defineStore('documents', {
   state: () => ({
     documents: [],
@@ -16,7 +19,11 @@ export const useDocumentStore = defineStore('documents', {
       size: 20,
       keyword: '',
       fileType: ''
-    }
+    },
+    // 上传队列相关状态
+    uploadQueue: [], // 上传队列：{ id, fileName, fileSize, progress, status, fileItem }
+    isUploading: false,
+    uploadCancelTokens: uploadCancelTokens
   }),
 
   getters: {
@@ -125,6 +132,137 @@ export const useDocumentStore = defineStore('documents', {
     invalidateCache() {
       this.lastLoaded = 0
       console.log('Document cache invalidated.')
+    },
+
+    // ==================== 上传队列管理 ====================
+    
+    // 添加文件到上传队列
+    addToUploadQueue(fileItems) {
+      const newItems = fileItems.map((fileItem, index) => ({
+        id: `upload_${Date.now()}_${index}`,
+        fileName: fileItem.name,
+        fileSize: fileItem.size,
+        progress: 0,
+        uploadProgress: 0,
+        extractProgress: 0,
+        phase: 'pending', // pending, uploading, extracting, completed, failed, cancelled
+        status: 'pending', // pending, uploading, success, failed, cancelled
+        fileItem: fileItem,
+        error: null
+      }))
+      this.uploadQueue.push(...newItems)
+      return newItems.map(item => item.id)
+    },
+
+    // 更新第1阶段(0-50%)上传进度
+    updateUploadTransferProgress(uploadId, progress) {
+      const item = this.uploadQueue.find(q => q.id === uploadId)
+      if (item) {
+        const safeProgress = Math.min(100, Math.max(0, progress))
+        item.uploadProgress = safeProgress
+        item.phase = 'uploading'
+        item.progress = Math.round((item.uploadProgress * 0.5) + (item.extractProgress * 0.5))
+      }
+    },
+
+    // 切换到第2阶段(50-100%)提取进度
+    setExtracting(uploadId) {
+      const item = this.uploadQueue.find(q => q.id === uploadId)
+      if (item) {
+        item.phase = 'extracting'
+        if (item.uploadProgress < 100) item.uploadProgress = 100
+        if (item.progress < 50) item.progress = 50
+      }
+    },
+
+    // 更新第2阶段(50-100%)提取进度
+    updateExtractionProgress(uploadId, progress) {
+      const item = this.uploadQueue.find(q => q.id === uploadId)
+      if (item) {
+        const safeProgress = Math.min(100, Math.max(0, progress))
+        item.extractProgress = safeProgress
+        item.phase = 'extracting'
+        item.progress = Math.round((item.uploadProgress * 0.5) + (item.extractProgress * 0.5))
+      }
+    },
+
+    // 更新上传状态
+    updateUploadStatus(uploadId, status, error = null) {
+      const item = this.uploadQueue.find(q => q.id === uploadId)
+      if (item) {
+        item.status = status
+        if (error) item.error = error
+        if (status === 'success') {
+          item.phase = 'completed'
+          item.uploadProgress = 100
+          item.extractProgress = 100
+          item.progress = 100
+        } else if (status === 'failed') {
+          item.phase = 'failed'
+        } else if (status === 'cancelled') {
+          item.phase = 'cancelled'
+        }
+      }
+    },
+
+    // 取消单个上传
+    cancelUpload(uploadId) {
+      const item = this.uploadQueue.find(q => q.id === uploadId)
+      if (item) {
+        item.status = 'cancelled'
+        item.phase = 'cancelled'
+        // 取消axios请求
+        const cancelToken = this.uploadCancelTokens.get(uploadId)
+        if (cancelToken) {
+          cancelToken.cancel('用户取消上传')
+          this.uploadCancelTokens.delete(uploadId)
+        }
+      }
+    },
+
+    // 取消所有上传
+    cancelAllUploads() {
+      this.uploadQueue.forEach(item => {
+        if (item.status === 'uploading' || item.status === 'pending') {
+          item.status = 'cancelled'
+          item.phase = 'cancelled'
+          const cancelToken = this.uploadCancelTokens.get(item.id)
+          if (cancelToken) {
+            cancelToken.cancel('用户取消上传')
+            this.uploadCancelTokens.delete(item.id)
+          }
+        }
+      })
+    },
+
+    // 清空上传队列
+    clearUploadQueue() {
+      // 先取消所有正在进行的上传
+      this.cancelAllUploads()
+      // 清空队列
+      this.uploadQueue = []
+      // 清空所有取消令牌
+      this.uploadCancelTokens.clear()
+      this.isUploading = false
+    },
+
+    // 移除已完成/失败的上传项
+    removeUploadItem(uploadId) {
+      const index = this.uploadQueue.findIndex(q => q.id === uploadId)
+      if (index > -1) {
+        this.uploadQueue.splice(index, 1)
+      }
+      this.uploadCancelTokens.delete(uploadId)
+    },
+
+    // 将上传状态设为上传中
+    setUploading(value) {
+      this.isUploading = value
+    },
+
+    // 注册上传取消令牌
+    registerCancelToken(uploadId, cancelToken) {
+      this.uploadCancelTokens.set(uploadId, cancelToken)
     }
   }
 })

@@ -6,6 +6,9 @@ const request = axios.create({
   timeout: 120000, // 2分钟超时，适配自动填表等耗时操作
 })
 
+// 导出CancelToken以供其他模块使用
+export const CancelToken = axios.CancelToken
+
 // 请求拦截器
 request.interceptors.request.use(
   config => {
