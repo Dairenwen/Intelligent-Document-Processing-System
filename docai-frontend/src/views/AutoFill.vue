@@ -24,11 +24,38 @@
           <div class="source-info-inner">
             <el-icon :size="20" color="#4F46E5"><InfoFilled /></el-icon>
             <span>数据库中已有 <strong>{{ docCount }}</strong> 个文档可用作数据源（其中 <strong>{{ extractedCount }}</strong> 个已成功提取内容）</span>
-            <el-button size="small" type="primary" plain class="manage-docs-btn" @click="$router.push('/documents')">管理文档</el-button>
+            <el-button size="small" type="primary" plain class="manage-docs-btn" @click="openSourceDialog">选择数据源文档</el-button>
           </div>
           <div v-if="!loadingStats && extractedCount === 0" class="source-warning">
             <el-icon color="#E65100"><WarningFilled /></el-icon>
             <span>暂无已提取数据的文档，请先前往文档管理页面上传并提取文档内容</span>
+          </div>
+        </div>
+
+        <div class="selected-sources" v-if="effectiveSourceCount > 0 || selectedSourceDocs.length > 0">
+          <div class="selected-sources-header">
+            <h4><el-icon><Document /></el-icon> 已选数据源文档（{{ selectedSourceDocs.length }}）</h4>
+            <div class="selected-sources-actions">
+              <el-button size="small" type="primary" plain @click="openSourceDialog">
+                <el-icon><UploadFilled /></el-icon> 继续选择
+              </el-button>
+              <el-button size="small" type="danger" plain :disabled="selectedSourceDocs.length === 0" @click="clearSelectedSources">清空已选</el-button>
+            </div>
+          </div>
+          <div v-if="selectedSourceDocs.length === 0" class="selected-sources-empty">
+            当前未指定数据源文档，将默认使用全部已提取文档（{{ extractedCount }}）
+          </div>
+          <div v-else class="selected-sources-list">
+            <el-tag
+              v-for="doc in selectedSourceDocs"
+              :key="doc.id"
+              closable
+              size="large"
+              effect="plain"
+              @close="removeSelectedSource(doc.id)"
+            >
+              {{ doc.title }}
+            </el-tag>
           </div>
         </div>
 
@@ -89,8 +116,8 @@
         </div>
 
         <div class="select-summary">
-          <span>已选择 <strong>{{ templateFiles.length }}</strong> 个模板文件</span>
-          <el-button type="primary" :disabled="templateFiles.length === 0 || extractedCount === 0" @click="startFill">
+          <span>已选择 <strong>{{ templateFiles.length }}</strong> 个模板文件，数据源 <strong>{{ effectiveSourceCount }}</strong> 个文档</span>
+          <el-button type="primary" :disabled="templateFiles.length === 0 || effectiveSourceCount === 0" @click="startFill">
             <el-icon><MagicStick /></el-icon> 开始智能填充
           </el-button>
         </div>
@@ -101,7 +128,7 @@
         <ul>
           <li>Word模板：在需要填写的位置使用 <code v-pre>{{字段名}}</code> 占位符，或留空表格单元格</li>
           <li>Excel模板：第一行作为表头，下方空单元格将根据表头名称自动填充</li>
-          <li>AI 会自动识别模板中的待填字段，并从数据库中所有已提取的文档中匹配数据</li>
+          <li>可在本页面自主选择一个或多个数据源文档；未选择时默认使用全部已提取文档</li>
         </ul>
       </div>
     </div>
@@ -135,7 +162,7 @@
           </div>
           <div class="progress-info">
             <el-progress :percentage="Math.min(fillProgress, 100)" :stroke-width="8" color="#4F46E5" :format="formatProgress" />
-            <p class="progress-detail">数据源: {{ extractedCount }} 个文档 | 模板: {{ templateFiles.length }} 个</p>
+            <p class="progress-detail">数据源: {{ effectiveSourceCount }} 个文档 | 模板: {{ templateFiles.length }} 个</p>
           </div>
         </div>
       </div>
@@ -156,7 +183,7 @@
           <div class="result-success" v-if="fillResult && !fillError">
             <div class="result-icon"><el-icon :size="64" color="#10B981"><SuccessFilled /></el-icon></div>
             <h4>智能填表已完成！</h4>
-            <p>耗时: {{ fillTimeDisplay }}，已使用 {{ extractedCount }} 个文档数据源</p>
+            <p>耗时: {{ fillTimeDisplay }}，已使用 {{ effectiveSourceCount }} 个文档数据源</p>
             <div class="result-file-list" v-if="resultFiles.length > 0">
               <div class="result-file-item" v-for="(f, i) in resultFiles" :key="i">
                 <span class="rf-icon"><el-icon :size="24" :color="f.name.endsWith('.xlsx') ? '#10B981' : '#3B82F6'"><Document /></el-icon></span>
@@ -181,22 +208,84 @@
         </div>
       </div>
     </div>
+
+    <el-dialog v-model="showSourceDialog" title="选择填表数据源文档" width="920px">
+      <div class="source-dialog-toolbar">
+        <div class="source-dialog-filters">
+          <el-input
+            v-model="sourceKeyword"
+            placeholder="搜索文档名称"
+            clearable
+            style="width: 280px"
+          />
+          <el-select v-model="sourceType" placeholder="文件类型" clearable style="width: 130px;">
+            <el-option label="Word" value="docx" />
+            <el-option label="Excel" value="xlsx" />
+            <el-option label="TXT" value="txt" />
+            <el-option label="Markdown" value="md" />
+          </el-select>
+        </div>
+        <div class="source-dialog-toolbar-actions">
+          <el-button @click="selectAllFilteredSources" :disabled="filteredSourceDocs.length === 0">全选当前筛选结果</el-button>
+          <el-button @click="clearDialogSelection" :disabled="sourceDialogSelectedIds.length === 0">清空当前勾选</el-button>
+          <el-button @click="refreshSourceDocs">刷新列表</el-button>
+        </div>
+      </div>
+
+      <el-table
+        ref="sourceTableRef"
+        :data="filteredSourceDocs"
+        max-height="420"
+        row-key="id"
+        @selection-change="handleSourceSelectionChange"
+      >
+        <el-table-column type="selection" width="55" reserve-selection />
+        <el-table-column label="文档名称" min-width="280">
+          <template #default="{ row }">
+            <div class="source-name-cell">
+              <span class="source-name">{{ row.title }}</span>
+              <span class="source-meta">{{ row.fileType?.toUpperCase() }} · {{ formatFileSize(row.fileSize || 0) }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="提取状态" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" :type="row.contentText && row.contentText.trim() ? 'success' : 'info'" effect="plain">
+              {{ row.contentText && row.contentText.trim() ? '可用' : '未提取' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="上传时间" width="160" align="center">
+          <template #default="{ row }">
+            <span class="text-muted">{{ formatDate(row.createdAt) }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <template #footer>
+        <div class="source-dialog-footer">
+          <span>当前勾选 {{ sourceDialogSelectedIds.length }} 个，可多次追加选择</span>
+          <div>
+            <el-button @click="showSourceDialog = false">取消</el-button>
+            <el-button type="primary" :disabled="sourceDialogSelectedIds.length === 0" @click="applySourceSelection">添加到已选数据源</el-button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useDocumentStore } from '../store/documentStore'
 import { storeToRefs } from 'pinia'
-import { autoFillAuto, autoFillAutoBatch, downloadBlob } from '../api'
+import { autoFillAuto, autoFillAutoBatch, autoFillSingle, autoFillBatch, downloadBlob } from '../api'
 import { ElMessage } from 'element-plus'
 import {
   UploadFilled, MagicStick, Download, InfoFilled, WarningFilled, RefreshRight,
   Document, SuccessFilled, CircleCloseFilled
 } from '@element-plus/icons-vue'
 
-const router = useRouter()
 const docStore = useDocumentStore()
 
 // Get reactive state and getters from the store
@@ -207,6 +296,13 @@ const ACCEPTED_EXTENSIONS = ['.docx', '.xlsx']
 // State
 const currentStep = ref(0)
 const templateFiles = ref([])
+const selectedSourceDocIds = ref([])
+
+const showSourceDialog = ref(false)
+const sourceKeyword = ref('')
+const sourceType = ref('')
+const sourceDialogSelectedIds = ref([])
+const sourceTableRef = ref(null)
 
 // Fill state
 const fillProgress = ref(0)
@@ -222,6 +318,33 @@ const fillTimeDisplay = computed(() => {
   return (fillTimeMs.value / 1000).toFixed(1) + 's'
 })
 
+const availableSourceDocs = computed(() => {
+  return (docStore.documents || []).filter((doc) => doc.contentText && doc.contentText.trim())
+})
+
+const sourceDocMap = computed(() => {
+  return new Map(availableSourceDocs.value.map((doc) => [doc.id, doc]))
+})
+
+const selectedSourceDocs = computed(() => {
+  return selectedSourceDocIds.value
+    .map((id) => sourceDocMap.value.get(id))
+    .filter(Boolean)
+})
+
+const filteredSourceDocs = computed(() => {
+  const keyword = sourceKeyword.value.trim().toLowerCase()
+  return availableSourceDocs.value.filter((doc) => {
+    const typeMatch = !sourceType.value || doc.fileType === sourceType.value
+    const keywordMatch = !keyword || (doc.title || '').toLowerCase().includes(keyword)
+    return typeMatch && keywordMatch
+  })
+})
+
+const effectiveSourceCount = computed(() => {
+  return selectedSourceDocs.value.length > 0 ? selectedSourceDocs.value.length : extractedCount.value
+})
+
 const formatProgress = (percentage) => {
   return Math.floor(percentage) + '%'
 }
@@ -232,6 +355,59 @@ const loadStats = async () => {
   if (!docStore.isCacheValid) {
     await docStore.fetchDocuments({ size: 500 }) // Fetch a larger batch for accurate counting
   }
+}
+
+const refreshSourceDocs = async () => {
+  await docStore.fetchDocuments({ size: 500, force: true })
+  ElMessage.success('已刷新文档列表')
+}
+
+const openSourceDialog = async () => {
+  if (!docStore.isCacheValid) {
+    await docStore.fetchDocuments({ size: 500 })
+  }
+  showSourceDialog.value = true
+  sourceDialogSelectedIds.value = [...selectedSourceDocIds.value]
+
+  await nextTick()
+  filteredSourceDocs.value.forEach((row) => {
+    if (selectedSourceDocIds.value.includes(row.id)) {
+      sourceTableRef.value?.toggleRowSelection(row, true)
+    }
+  })
+}
+
+const handleSourceSelectionChange = (rows) => {
+  sourceDialogSelectedIds.value = rows.map((row) => row.id)
+}
+
+const clearDialogSelection = () => {
+  sourceTableRef.value?.clearSelection()
+  sourceDialogSelectedIds.value = []
+}
+
+const selectAllFilteredSources = async () => {
+  if (filteredSourceDocs.value.length === 0) return
+  sourceTableRef.value?.clearSelection()
+  await nextTick()
+  filteredSourceDocs.value.forEach((row) => {
+    sourceTableRef.value?.toggleRowSelection(row, true)
+  })
+}
+
+const applySourceSelection = () => {
+  const merged = new Set([...selectedSourceDocIds.value, ...sourceDialogSelectedIds.value])
+  selectedSourceDocIds.value = Array.from(merged)
+  showSourceDialog.value = false
+  ElMessage.success(`已添加 ${sourceDialogSelectedIds.value.length} 个数据源文档`)
+}
+
+const removeSelectedSource = (docId) => {
+  selectedSourceDocIds.value = selectedSourceDocIds.value.filter((id) => id !== docId)
+}
+
+const clearSelectedSources = () => {
+  selectedSourceDocIds.value = []
 }
 
 const handleTemplateChange = (file) => {
@@ -329,13 +505,18 @@ const startFill = async () => {
   try {
     const formData = new FormData()
     let response
+    const hasManualSources = selectedSourceDocIds.value.length > 0
+
+    selectedSourceDocIds.value.forEach((id) => {
+      formData.append('sourceDocIds', String(id))
+    })
 
     if (templateFiles.value.length === 1) {
       formData.append('template', templateFiles.value[0].raw)
-      response = await autoFillAuto(formData)
+      response = hasManualSources ? await autoFillSingle(formData) : await autoFillAuto(formData)
     } else {
       templateFiles.value.forEach(f => formData.append('templates', f.raw))
-      response = await autoFillAutoBatch(formData)
+      response = hasManualSources ? await autoFillBatch(formData) : await autoFillAutoBatch(formData)
     }
 
     clearInterval(progressTimer)
@@ -393,7 +574,23 @@ const resetAll = () => {
   fillProgress.value = 0
   fillPhase.value = 0
   resultFiles.value = []
+  sourceKeyword.value = ''
+  sourceType.value = ''
+  sourceDialogSelectedIds.value = []
   // No need to call loadStats(), data is already in store or will be loaded on next visit
+}
+
+const formatDate = (dateString) => {
+  if (!dateString) return '-'
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 
 onMounted(loadStats)
@@ -486,6 +683,95 @@ onMounted(loadStats)
   border-top: 1px dashed rgba(230, 81, 0, 0.3);
   font-size: 13px;
   color: #E65100;
+}
+
+.selected-sources {
+  margin: 12px 28px 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  background: #fff;
+}
+
+.selected-sources-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.selected-sources-header h4 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.selected-sources-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selected-sources-empty {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.selected-sources-list {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.source-dialog-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.source-dialog-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.source-dialog-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.source-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.source-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.source-name {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.source-meta,
+.text-muted {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .select-summary {

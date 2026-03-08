@@ -111,8 +111,8 @@
           </div>
           <div class="ai-visual-label">
             <span class="avl-en">Neural Processing</span>
-            <span class="avl-dot"></span>
-            <span class="avl-status">Ready</span>
+            <span class="avl-dot" :class="{ active: loading || isStreaming }"></span>
+            <span class="avl-status">{{ loading ? 'Thinking...' : isStreaming ? 'Generating' : 'Ready' }}</span>
           </div>
         </div>
       </div>
@@ -193,9 +193,9 @@
                 <circle cx="12" cy="12" r="4" fill="var(--primary)"/>
               </svg>
             </div>
-            <div class="message-bubble ai-bubble">
-              <div class="bubble-text" v-html="renderMarkdown(msg.content)"></div>
-              <div class="bubble-actions" v-if="!msg._isWelcome">
+            <div class="message-bubble ai-bubble" :class="{ 'streaming-bubble': msg._streaming }">
+              <div class="bubble-text" v-html="renderMessageContent(msg)"></div>
+              <div class="bubble-actions" v-if="!msg._isWelcome && !msg._streaming">
                 <el-tooltip content="复制">
                   <button class="action-btn" @click="copyText(msg.content)">
                     <el-icon :size="14"><CopyDocument /></el-icon>
@@ -258,7 +258,7 @@
             <el-button
               type="primary"
               circle
-              :disabled="!inputText.trim() || loading"
+              :disabled="!inputText.trim() || loading || isStreaming"
               @click="sendMessage"
               class="send-btn"
             >
@@ -299,8 +299,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { aiChat, getDocument, getDocuments, downloadBlob, updateDocumentContent } from '../api'
 import request from '../api/request'
 import { ElMessage } from 'element-plus'
@@ -310,6 +310,7 @@ import {
   DataAnalysis, Promotion, Upload
 } from '@element-plus/icons-vue'
 import { marked } from 'marked'
+import { startTask, getTask, clearTask, subscribe as subscribeTask } from '../utils/chatTaskManager'
 
 // Configure marked for safe rendering
 marked.setOptions({
@@ -318,7 +319,6 @@ marked.setOptions({
 })
 
 const route = useRoute()
-const router = useRouter()
 const messages = ref([])
 const inputText = ref('')
 const loading = ref(false)
@@ -339,14 +339,38 @@ const docSearchKey = ref('')
 const docList = ref([])
 const loadingDocList = ref(false)
 const lastAIContent = ref('')
+const isStreaming = ref(false)
+let _streamingTimer = null
+let _unsubscribe = null
 
 // 用户信息
 const userId = localStorage.getItem('userId') || 'default'
 const nickname = localStorage.getItem('nickname') || '用户'
 const avatarChar = computed(() => nickname?.charAt(0) || 'U')
+const linkedDocStorageKey = computed(() => `docai_linked_doc_${userId}`)
 
 // 历史记录key
 const chatStorageKey = computed(() => `docai_chat_${userId}_${currentDocId.value || 'general'}`)
+
+const getPersistedLinkedDocId = () => {
+  try {
+    return parseDocId(localStorage.getItem(linkedDocStorageKey.value))
+  } catch (e) {
+    return null
+  }
+}
+
+const persistLinkedDocId = (docId) => {
+  try {
+    if (docId) {
+      localStorage.setItem(linkedDocStorageKey.value, String(docId))
+    } else {
+      localStorage.removeItem(linkedDocStorageKey.value)
+    }
+  } catch (e) {
+    console.warn('持久化关联文档失败', e)
+  }
+}
 
 const formatDate = (d) => d ? d.split('T')[0] : '-'
 
@@ -375,10 +399,11 @@ const quickQuestions = computed(() => {
 
 // === 历史记录持久化 ===
 const saveChatHistory = () => {
+  if (isStreaming.value) return
   try {
     const toSave = messages.value.filter(m => !m._isWelcome).map(m => ({
       role: m.role,
-      content: m.content
+      content: m._fullContent || m.content
     }))
     localStorage.setItem(chatStorageKey.value, JSON.stringify(toSave))
   } catch (e) {
@@ -401,6 +426,35 @@ const loadChatHistory = () => {
   return null
 }
 
+const buildWelcomeMessage = (doc) => {
+  if (doc) {
+    return `您好，我已加载文档"${doc.title}"。\n\n我可以帮您：\n- 总结文档核心内容\n- 提取关键信息和数据\n- 编辑润色优化\n- 调整文档格式结构\n- 解答文档相关疑问\n\n您可以直接提问，或使用左侧快捷操作。`
+  }
+  return '您好！我是 DocAI 智能助手。我可以帮您撰写公文、分析文档、提取关键信息、编辑优化文档。\n\n提示：关联文档后可使用更多功能（点击左侧"选择文档关联"）。'
+}
+
+const restoreChatForCurrentContext = async () => {
+  const history = loadChatHistory()
+  if (history && history.length > 0) {
+    messages.value = history
+    if (currentDoc.value) {
+      messages.value.unshift({
+        role: 'ai',
+        content: `已恢复与文档"${currentDoc.value.title}"的历史对话。`,
+        _isWelcome: true
+      })
+    }
+    await scrollToBottom()
+    return
+  }
+
+  messages.value = [{
+    role: 'ai',
+    content: buildWelcomeMessage(currentDoc.value),
+    _isWelcome: true
+  }]
+}
+
 // 监听消息变化自动保存
 watch(messages, () => {
   saveChatHistory()
@@ -411,10 +465,13 @@ watch(() => route.query.docId, async (newDocId) => {
   const parsed = parseDocId(newDocId)
   currentDocId.value = parsed
   if (parsed) {
+    persistLinkedDocId(parsed)
     await loadDocument(parsed)
   } else {
     currentDoc.value = null
+    persistLinkedDocId(null)
   }
+  await restoreChatForCurrentContext()
 })
 
 // Load document by ID
@@ -448,9 +505,11 @@ const selectDoc = async (doc) => {
   showDocPicker.value = false
   currentDoc.value = doc
   currentDocId.value = doc.id
+  persistLinkedDocId(doc.id)
+  await restoreChatForCurrentContext()
   messages.value.push({
     role: 'ai',
-    content: `已关联文档"${doc.title}"。\n\n我可以帮您：\n- 总结文档核心内容\n- 提取关键信息和数据\n- 编辑润色文档\n- 调整文档格式\n- 回答文档相关问题`,
+    content: `已关联文档"${doc.title}"，后续切换页面后会自动保留该关联关系与对话记录。`,
     _isWelcome: true
   })
   await scrollToBottom()
@@ -459,6 +518,8 @@ const selectDoc = async (doc) => {
 const unlinkDoc = () => {
   currentDoc.value = null
   currentDocId.value = null
+  persistLinkedDocId(null)
+  restoreChatForCurrentContext()
   messages.value.push({
     role: 'ai',
     content: '已取消文档关联。您可以继续自由对话，或重新选择文档。',
@@ -474,43 +535,50 @@ const downloadDoc = () => {
 onMounted(async () => {
   loadDocList()
 
-  if (currentDocId.value) {
-    await loadDocument(currentDocId.value)
+  const routeDocId = parseDocId(route.query.docId)
+  const persistedDocId = getPersistedLinkedDocId()
+  const initialDocId = routeDocId || persistedDocId
+
+  if (initialDocId) {
+    currentDocId.value = initialDocId
+    persistLinkedDocId(initialDocId)
+    await loadDocument(initialDocId)
   }
 
-  // 尝试加载历史记录
-  const history = loadChatHistory()
-  if (history && history.length > 0) {
-    messages.value = history
-    if (currentDoc.value) {
-      messages.value.unshift({
-        role: 'ai',
-        content: `已恢复与文档"${currentDoc.value.title}"的历史对话。`,
-        _isWelcome: true
-      })
+  await restoreChatForCurrentContext()
+
+  // 恢复后台AI任务
+  const pendingTask = getTask()
+  if (pendingTask) {
+    if (pendingTask.status === 'pending') {
+      loading.value = true
     }
-    await scrollToBottom()
-  } else {
-    if (currentDocId.value && currentDoc.value) {
-      messages.value.push({
-        role: 'ai',
-        content: `您好，我已加载文档"${currentDoc.value.title}"。\n\n我可以帮您：\n- 总结文档核心内容\n- 提取关键信息和数据\n- 编辑润色优化\n- 调整文档格式结构\n- 解答文档相关疑问\n\n您可以直接提问，或使用左侧快捷操作。`,
-        _isWelcome: true
-      })
-    } else if (currentDocId.value && !currentDoc.value) {
-      messages.value.push({
-        role: 'ai',
-        content: '您好！我是 DocAI 智能助手。文档加载失败，您可以在左侧重新选择文档，或直接与我对话。',
-        _isWelcome: true
-      })
-    } else {
-      messages.value.push({
-        role: 'ai',
-        content: '您好！我是 DocAI 智能助手。我可以帮您撰写公文、分析文档、提取关键信息、编辑优化文档。\n\n提示：关联文档后可使用更多功能（点击左侧"选择文档关联"）。',
-        _isWelcome: true
-      })
-    }
+    attachToTask(pendingTask)
   }
+})
+
+onBeforeUnmount(() => {
+  // 停止打字动画，提交完整内容
+  if (_streamingTimer) {
+    clearTimeout(_streamingTimer)
+    _streamingTimer = null
+  }
+  if (isStreaming.value) {
+    messages.value.forEach(m => {
+      if (m._streaming && m._fullContent) {
+        m.content = m._fullContent
+        m._streaming = false
+        delete m._fullContent
+      }
+    })
+    isStreaming.value = false
+    lastAIContent.value = messages.value[messages.value.length - 1]?.content || ''
+  }
+  if (_unsubscribe) {
+    _unsubscribe()
+    _unsubscribe = null
+  }
+  saveChatHistory()
 })
 
 const sendCommand = (text) => {
@@ -519,7 +587,7 @@ const sendCommand = (text) => {
 }
 
 const sendMessage = async () => {
-  if (!inputText.value.trim() || loading.value) return
+  if (!inputText.value.trim() || loading.value || isStreaming.value) return
 
   const userMsg = inputText.value.trim()
   messages.value.push({ role: 'user', content: userMsg })
@@ -527,21 +595,62 @@ const sendMessage = async () => {
   loading.value = true
   await scrollToBottom()
 
-  try {
-    const linkedDocId = Number.isFinite(currentDocId.value) ? currentDocId.value : null
-    const res = await requestAIChatWithFallback(userMsg, linkedDocId)
-    const reply = res.data?.reply || res.data || ''
-    lastAIContent.value = reply
-    messages.value.push({ role: 'ai', content: reply })
-  } catch (err) {
-    messages.value.push({
-      role: 'ai',
-      content: '抱歉，服务暂时繁忙，请稍后再试。如果问题持续，请检查网络连接或后端服务是否启动。'
-    })
-  } finally {
-    loading.value = false
-    await scrollToBottom()
+  const linkedDocId = Number.isFinite(currentDocId.value) ? currentDocId.value : null
+  const task = startTask(() => requestAIChatWithFallback(userMsg, linkedDocId))
+  attachToTask(task)
+}
+
+// 订阅后台AI任务结果
+const attachToTask = (task) => {
+  if (_unsubscribe) { _unsubscribe(); _unsubscribe = null }
+  _unsubscribe = subscribeTask(task, (type, data) => {
+    if (type === 'complete') {
+      loading.value = false
+      beginTypewriter(data)
+    } else {
+      loading.value = false
+      messages.value.push({
+        role: 'ai',
+        content: '抱歉，服务暂时繁忙，请稍后再试。如果问题持续，请检查网络连接或后端服务是否启动。'
+      })
+      clearTask()
+      scrollToBottom()
+    }
+  })
+}
+
+// 逐字打字效果
+const beginTypewriter = (fullText) => {
+  const msg = { role: 'ai', content: '', _streaming: true, _fullContent: fullText }
+  messages.value.push(msg)
+  isStreaming.value = true
+  loading.value = false
+
+  const target = messages.value[messages.value.length - 1]
+  let idx = 0
+  const len = fullText.length
+  const step = Math.max(1, Math.ceil(len / 200))
+
+  const tick = () => {
+    if (idx >= len) {
+      target.content = fullText
+      target._streaming = false
+      delete target._fullContent
+      isStreaming.value = false
+      lastAIContent.value = fullText
+      _streamingTimer = null
+      clearTask()
+      saveChatHistory()
+      scrollToBottom()
+      return
+    }
+    idx = Math.min(idx + step, len)
+    target.content = fullText.substring(0, idx)
+    scrollToBottom()
+    _streamingTimer = setTimeout(tick, 16)
   }
+
+  tick()
 }
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
@@ -639,6 +748,13 @@ const saveToDocument = async (content) => {
 }
 
 const clearChat = () => {
+  // 中止进行中的AI任务和打字动画
+  if (_streamingTimer) { clearTimeout(_streamingTimer); _streamingTimer = null }
+  isStreaming.value = false
+  loading.value = false
+  clearTask()
+  if (_unsubscribe) { _unsubscribe(); _unsubscribe = null }
+
   messages.value = []
   lastAIContent.value = ''
   try { localStorage.removeItem(chatStorageKey.value) } catch (e) {}
@@ -668,6 +784,16 @@ const copyText = (text) => {
 const renderMarkdown = (text) => {
   if (!text) return ''
   return marked.parse(text)
+}
+
+const renderMessageContent = (msg) => {
+  const html = renderMarkdown(msg.content || '')
+  if (msg._streaming) {
+    const cursor = '<span class="stream-cursor">▍</span>'
+    const lastClose = html.lastIndexOf('</')
+    return lastClose > 0 ? html.substring(0, lastClose) + cursor + html.substring(lastClose) : html + cursor
+  }
+  return html
 }
 
 const scrollToBottom = async () => {
@@ -746,6 +872,10 @@ const scrollToBottom = async () => {
 .action-btn.save-btn { color: var(--primary); border-color: rgba(79, 70, 229, 0.3); }
 .action-btn.save-btn:hover { background: rgba(79, 70, 229, 0.1); color: var(--primary); border-color: var(--primary); }
 .loading-bubble { min-width: 60px; }
+.streaming-bubble { border-color: rgba(79, 70, 229, 0.25); }
+.bubble-text :deep(.stream-cursor) { color: var(--primary); font-weight: normal; animation: cursor-blink 0.8s step-end infinite; }
+@keyframes cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.avl-dot.active { background: var(--primary); animation: dot-blink 0.5s ease-in-out infinite; }
 .typing-dots { display: flex; gap: 4px; align-items: center; height: 20px; }
 .typing-dots span { width: 7px; height: 7px; background: var(--primary); border-radius: 50%; opacity: 0.4; animation: typingDot 1.4s infinite ease-in-out; }
 .typing-dots span:nth-child(1) { animation-delay: 0s; }
