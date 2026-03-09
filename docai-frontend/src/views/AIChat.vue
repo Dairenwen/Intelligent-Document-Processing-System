@@ -66,53 +66,59 @@
           </div>
         </div>
 
-        <div class="sidebar-section">
-          <h4>
-            <el-icon :size="14"><Promotion /></el-icon> 快捷提问
-          </h4>
-          <div class="quick-questions">
+        <div class="sidebar-section convo-section">
+          <div class="convo-header">
+            <h4>
+              <el-icon :size="14"><ChatDotRound /></el-icon> 历史对话
+            </h4>
+            <el-button size="small" type="primary" plain @click="createNewConversation">
+              <el-icon><Plus /></el-icon> 新对话
+            </el-button>
+          </div>
+          <el-input
+            v-model="convoSearchKey"
+            size="small"
+            clearable
+            placeholder="搜索历史对话"
+            class="convo-search"
+          />
+          <div class="conversation-list">
+            <el-empty v-if="filteredConversations.length === 0" :description="convoSearchKey ? '未找到匹配对话' : '暂无历史对话'" :image-size="50" />
             <div
-              class="quick-q"
-              v-for="q in quickQuestions"
-              :key="q"
-              @click="sendCommand(q)"
-            >{{ q }}</div>
-          </div>
-        </div>
-
-        <!-- AI 动态效果区域 -->
-        <div class="sidebar-ai-visual">
-          <div class="ai-visual-canvas">
-            <svg viewBox="0 0 200 120" class="neural-svg">
-              <!-- Connecting lines -->
-              <line x1="30" y1="30" x2="100" y2="25" class="nn-line nn-l1" />
-              <line x1="30" y1="60" x2="100" y2="25" class="nn-line nn-l2" />
-              <line x1="30" y1="60" x2="100" y2="60" class="nn-line nn-l3" />
-              <line x1="30" y1="90" x2="100" y2="60" class="nn-line nn-l4" />
-              <line x1="30" y1="90" x2="100" y2="95" class="nn-line nn-l5" />
-              <line x1="30" y1="30" x2="100" y2="60" class="nn-line nn-l6" />
-              <line x1="100" y1="25" x2="170" y2="45" class="nn-line nn-l7" />
-              <line x1="100" y1="60" x2="170" y2="45" class="nn-line nn-l8" />
-              <line x1="100" y1="60" x2="170" y2="80" class="nn-line nn-l9" />
-              <line x1="100" y1="95" x2="170" y2="80" class="nn-line nn-l10" />
-              <!-- Input nodes -->
-              <circle cx="30" cy="30" r="5" class="nn-node nn-input" />
-              <circle cx="30" cy="60" r="5" class="nn-node nn-input" />
-              <circle cx="30" cy="90" r="5" class="nn-node nn-input" />
-              <!-- Hidden nodes -->
-              <circle cx="100" cy="25" r="6" class="nn-node nn-hidden" />
-              <circle cx="100" cy="60" r="6" class="nn-node nn-hidden" />
-              <circle cx="100" cy="95" r="6" class="nn-node nn-hidden" />
-              <!-- Output nodes -->
-              <circle cx="170" cy="45" r="5" class="nn-node nn-output" />
-              <circle cx="170" cy="80" r="5" class="nn-node nn-output" />
-            </svg>
-            <div class="ai-pulse-ring"></div>
-          </div>
-          <div class="ai-visual-label">
-            <span class="avl-en">Neural Processing</span>
-            <span class="avl-dot" :class="{ active: loading || isStreaming }"></span>
-            <span class="avl-status">{{ loading ? 'Thinking...' : isStreaming ? 'Generating' : 'Ready' }}</span>
+              v-for="session in filteredConversations"
+              :key="session.id"
+              class="conversation-item"
+              :class="{ active: session.id === activeConversationId }"
+              @click="switchConversation(session.id)"
+            >
+              <div class="conversation-main">
+                <div class="conversation-title">
+                  <el-icon v-if="session.pinned" class="pin-mark"><Top /></el-icon>
+                  <span>{{ session.title }}</span>
+                </div>
+                <div class="conversation-meta">
+                  <span class="meta-time">{{ formatSessionTime(session.updatedAt) }}</span>
+                  <span v-if="session.linkedDocName" class="meta-doc">{{ session.linkedDocName }}</span>
+                </div>
+              </div>
+              <div class="conversation-actions" @click.stop>
+                <el-tooltip content="重命名">
+                  <button class="convo-action-btn" @click="renameConversation(session)">
+                    <el-icon :size="14"><Edit /></el-icon>
+                  </button>
+                </el-tooltip>
+                <el-tooltip content="删除">
+                  <button class="convo-action-btn delete" @click="deleteConversation(session)">
+                    <el-icon :size="14"><Delete /></el-icon>
+                  </button>
+                </el-tooltip>
+                <el-tooltip :content="session.pinned ? '取消置顶' : '置顶'">
+                  <button class="convo-action-btn" :class="{ pinned: session.pinned }" @click="togglePinConversation(session)">
+                    <el-icon :size="14"><Top /></el-icon>
+                  </button>
+                </el-tooltip>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -134,7 +140,7 @@
             </svg>
           </div>
           <div>
-            <span class="chat-title-text">AI 智能对话</span>
+            <span class="chat-title-text">{{ activeConversation?.title || 'AI 智能对话' }}</span>
             <span class="chat-model-tag">GLM-4.7-Flash</span>
           </div>
         </div>
@@ -303,11 +309,11 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { aiChat, getDocument, getDocuments, downloadBlob, updateDocumentContent } from '../api'
 import request from '../api/request'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Delete, Position, CopyDocument, Document, Download, Close, FolderOpened,
   DArrowLeft, DArrowRight, Link, Setting, Memo, Search, EditPen, SetUp,
-  DataAnalysis, Promotion, Upload
+  DataAnalysis, Upload, ChatDotRound, Plus, Top, Edit
 } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import { startTask, getTask, clearTask, subscribe as subscribeTask } from '../utils/chatTaskManager'
@@ -347,29 +353,108 @@ let _unsubscribe = null
 const userId = localStorage.getItem('userId') || 'default'
 const nickname = localStorage.getItem('nickname') || '用户'
 const avatarChar = computed(() => nickname?.charAt(0) || 'U')
-const linkedDocStorageKey = computed(() => `docai_linked_doc_${userId}`)
+const sessionStorageKey = computed(() => `docai_chat_sessions_${userId}`)
+const activeSessionStorageKey = computed(() => `docai_active_chat_session_${userId}`)
+const conversations = ref([])
+const activeConversationId = ref(null)
+const convoSearchKey = ref('')
 
-// 历史记录key
-const chatStorageKey = computed(() => `docai_chat_${userId}_${currentDocId.value || 'general'}`)
+const toTimestamp = (value) => {
+  const t = new Date(value || 0).getTime()
+  return Number.isFinite(t) ? t : 0
+}
 
-const getPersistedLinkedDocId = () => {
-  try {
-    return parseDocId(localStorage.getItem(linkedDocStorageKey.value))
-  } catch (e) {
-    return null
+const sortedConversations = computed(() => {
+  return [...conversations.value].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+    return toTimestamp(b.updatedAt) - toTimestamp(a.updatedAt)
+  })
+})
+
+const activeConversation = computed(() => {
+  return conversations.value.find(item => item.id === activeConversationId.value) || null
+})
+
+const filteredConversations = computed(() => {
+  const keyword = convoSearchKey.value.trim().toLowerCase()
+  if (!keyword) return sortedConversations.value
+  return sortedConversations.value.filter(item => item.title?.toLowerCase().includes(keyword))
+})
+
+const createSession = (linkedDocId = null, linkedDocName = '') => {
+  const now = new Date().toISOString()
+  return {
+    id: `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    title: '新对话',
+    pinned: false,
+    createdAt: now,
+    updatedAt: now,
+    linkedDocId,
+    linkedDocName,
+    messages: []
   }
 }
 
-const persistLinkedDocId = (docId) => {
+const normalizeSession = (session) => {
+  if (!session || typeof session !== 'object') return null
+  return {
+    id: session.id || `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    title: typeof session.title === 'string' && session.title.trim() ? session.title.trim() : '新对话',
+    pinned: Boolean(session.pinned),
+    createdAt: session.createdAt || new Date().toISOString(),
+    updatedAt: session.updatedAt || new Date().toISOString(),
+    linkedDocId: parseDocId(session.linkedDocId),
+    linkedDocName: typeof session.linkedDocName === 'string' ? session.linkedDocName : '',
+    messages: Array.isArray(session.messages) ? session.messages.filter(m => m?.role && typeof m?.content === 'string').map(m => ({ role: m.role, content: m.content })) : []
+  }
+}
+
+const saveConversations = () => {
+  if (isStreaming.value) return
   try {
-    if (docId) {
-      localStorage.setItem(linkedDocStorageKey.value, String(docId))
-    } else {
-      localStorage.removeItem(linkedDocStorageKey.value)
+    localStorage.setItem(sessionStorageKey.value, JSON.stringify(conversations.value))
+    if (activeConversationId.value) {
+      localStorage.setItem(activeSessionStorageKey.value, activeConversationId.value)
     }
   } catch (e) {
-    console.warn('持久化关联文档失败', e)
+    console.warn('保存会话失败', e)
   }
+}
+
+const updateConversationMeta = (sessionId, patch = {}) => {
+  const target = conversations.value.find(item => item.id === sessionId)
+  if (!target) return
+  Object.assign(target, patch)
+  target.updatedAt = new Date().toISOString()
+  saveConversations()
+}
+
+const persistActiveMessages = () => {
+  const target = activeConversation.value
+  if (!target) return
+  target.messages = messages.value
+    .filter(m => !m._isWelcome)
+    .map(m => ({ role: m.role, content: m._fullContent || m.content }))
+  target.updatedAt = new Date().toISOString()
+  saveConversations()
+}
+
+const generateConversationTitle = (text) => {
+  const cleaned = (text || '').replace(/\s+/g, ' ').trim()
+  if (!cleaned) return '新对话'
+  return cleaned.length > 18 ? `${cleaned.slice(0, 18)}...` : cleaned
+}
+
+const formatSessionTime = (value) => {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const now = new Date()
+  const sameDay = d.toDateString() === now.toDateString()
+  if (sameDay) {
+    return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  }
+  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
 }
 
 const formatDate = (d) => d ? d.split('T')[0] : '-'
@@ -380,52 +465,6 @@ const filteredDocList = computed(() => {
   return docList.value.filter(d => d.title?.toLowerCase().includes(k))
 })
 
-const quickQuestions = computed(() => {
-  if (currentDoc.value) {
-    return [
-      '总结这篇文档的核心内容',
-      '提取文档中的关键数据',
-      '帮我优化这篇文档的结构',
-      '分析文档中的数据趋势'
-    ]
-  }
-  return [
-    '帮我写一个会议通知',
-    '如何优化公文写作质量？',
-    '请解释什么是非结构化数据',
-    '写一个项目进度汇报模板'
-  ]
-})
-
-// === 历史记录持久化 ===
-const saveChatHistory = () => {
-  if (isStreaming.value) return
-  try {
-    const toSave = messages.value.filter(m => !m._isWelcome).map(m => ({
-      role: m.role,
-      content: m._fullContent || m.content
-    }))
-    localStorage.setItem(chatStorageKey.value, JSON.stringify(toSave))
-  } catch (e) {
-    console.warn('保存聊天记录失败', e)
-  }
-}
-
-const loadChatHistory = () => {
-  try {
-    const saved = localStorage.getItem(chatStorageKey.value)
-    if (saved) {
-      const parsed = JSON.parse(saved)
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed
-      }
-    }
-  } catch (e) {
-    console.warn('加载聊天记录失败', e)
-  }
-  return null
-}
-
 const buildWelcomeMessage = (doc) => {
   if (doc) {
     return `您好，我已加载文档"${doc.title}"。\n\n我可以帮您：\n- 总结文档核心内容\n- 提取关键信息和数据\n- 编辑润色优化\n- 调整文档格式结构\n- 解答文档相关疑问\n\n您可以直接提问，或使用左侧快捷操作。`
@@ -433,45 +472,164 @@ const buildWelcomeMessage = (doc) => {
   return '您好！我是 DocAI 智能助手。我可以帮您撰写公文、分析文档、提取关键信息、编辑优化文档。\n\n提示：关联文档后可使用更多功能（点击左侧"选择文档关联"）。'
 }
 
-const restoreChatForCurrentContext = async () => {
-  const history = loadChatHistory()
-  if (history && history.length > 0) {
-    messages.value = history
-    if (currentDoc.value) {
-      messages.value.unshift({
-        role: 'ai',
-        content: `已恢复与文档"${currentDoc.value.title}"的历史对话。`,
-        _isWelcome: true
-      })
-    }
-    await scrollToBottom()
+const createNewConversation = async (linkedDocId = null, linkedDocName = '') => {
+  if (loading.value || isStreaming.value) {
+    ElMessage.warning('当前正在生成回复，请稍后再新建对话')
+    return
+  }
+  persistActiveMessages()
+  const newSession = createSession(linkedDocId, linkedDocName)
+  conversations.value.push(newSession)
+  activeConversationId.value = newSession.id
+  currentDoc.value = null
+  currentDocId.value = linkedDocId
+  if (linkedDocId) {
+    await loadDocument(linkedDocId)
+    updateConversationMeta(newSession.id, { linkedDocId, linkedDocName: currentDoc.value?.title || linkedDocName || '' })
+  }
+  messages.value = [{ role: 'ai', content: buildWelcomeMessage(currentDoc.value), _isWelcome: true }]
+  lastAIContent.value = ''
+  saveConversations()
+}
+
+const switchConversation = async (sessionId) => {
+  if (loading.value || isStreaming.value) {
+    ElMessage.warning('当前正在生成回复，请稍后切换对话')
+    return
+  }
+  if (sessionId === activeConversationId.value) return
+  persistActiveMessages()
+  const target = conversations.value.find(item => item.id === sessionId)
+  if (!target) return
+  activeConversationId.value = sessionId
+  currentDocId.value = parseDocId(target.linkedDocId)
+  if (currentDocId.value) {
+    await loadDocument(currentDocId.value)
+    updateConversationMeta(sessionId, { linkedDocName: currentDoc.value?.title || target.linkedDocName || '' })
+  } else {
+    currentDoc.value = null
+  }
+  messages.value = target.messages?.length
+    ? target.messages.map(m => ({ role: m.role, content: m.content }))
+    : [{ role: 'ai', content: buildWelcomeMessage(currentDoc.value), _isWelcome: true }]
+  lastAIContent.value = ''
+  await scrollToBottom()
+}
+
+const renameConversation = async (session) => {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入新的对话名称', '重命名对话', {
+      inputValue: session.title,
+      inputPattern: /\S+/,
+      inputErrorMessage: '名称不能为空',
+      confirmButtonText: '确定',
+      cancelButtonText: '取消'
+    })
+    const name = value.trim().slice(0, 30)
+    updateConversationMeta(session.id, { title: name || '新对话' })
+    ElMessage.success('重命名成功')
+  } catch (e) {
+    // 用户取消不提示
+  }
+}
+
+const deleteConversation = async (session) => {
+  try {
+    await ElMessageBox.confirm(`确认删除对话「${session.title}」吗？`, '删除对话', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+  } catch (e) {
     return
   }
 
-  messages.value = [{
-    role: 'ai',
-    content: buildWelcomeMessage(currentDoc.value),
-    _isWelcome: true
-  }]
+  const idx = conversations.value.findIndex(item => item.id === session.id)
+  if (idx === -1) return
+  conversations.value.splice(idx, 1)
+
+  if (activeConversationId.value === session.id) {
+    if (conversations.value.length === 0) {
+      await createNewConversation()
+    } else {
+      await switchConversation(sortedConversations.value[0].id)
+    }
+  }
+  saveConversations()
+  ElMessage.success('已删除该对话')
 }
 
-// 监听消息变化自动保存
-watch(messages, () => {
-  saveChatHistory()
-}, { deep: true })
+const togglePinConversation = (session) => {
+  updateConversationMeta(session.id, { pinned: !session.pinned })
+}
 
-// 同一路由下 docId 变化时刷新关联文档
-watch(() => route.query.docId, async (newDocId) => {
-  const parsed = parseDocId(newDocId)
-  currentDocId.value = parsed
-  if (parsed) {
-    persistLinkedDocId(parsed)
-    await loadDocument(parsed)
+const loadSessions = async () => {
+  let parsedSessions = []
+  try {
+    const raw = localStorage.getItem(sessionStorageKey.value)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        parsedSessions = parsed.map(normalizeSession).filter(Boolean)
+      }
+    }
+  } catch (e) {
+    console.warn('读取历史会话失败', e)
+  }
+
+  conversations.value = parsedSessions
+
+  const routeDocId = parseDocId(route.query.docId)
+  let targetSessionId = null
+  if (routeDocId) {
+    const matched = conversations.value.find(item => parseDocId(item.linkedDocId) === routeDocId)
+    if (matched) {
+      targetSessionId = matched.id
+    } else {
+      const s = createSession(routeDocId)
+      conversations.value.unshift(s)
+      targetSessionId = s.id
+    }
+  }
+
+  if (!targetSessionId) {
+    const persistedActive = localStorage.getItem(activeSessionStorageKey.value)
+    const exists = conversations.value.some(item => item.id === persistedActive)
+    targetSessionId = exists ? persistedActive : conversations.value[0]?.id
+  }
+
+  if (!targetSessionId) {
+    const s = createSession()
+    conversations.value.push(s)
+    targetSessionId = s.id
+  }
+
+  activeConversationId.value = targetSessionId
+  const active = conversations.value.find(item => item.id === targetSessionId)
+  currentDocId.value = parseDocId(active?.linkedDocId)
+  if (currentDocId.value) {
+    await loadDocument(currentDocId.value)
+    updateConversationMeta(active.id, { linkedDocName: currentDoc.value?.title || active.linkedDocName || '' })
   } else {
     currentDoc.value = null
-    persistLinkedDocId(null)
   }
-  await restoreChatForCurrentContext()
+
+  messages.value = active?.messages?.length
+    ? active.messages.map(m => ({ role: m.role, content: m.content }))
+    : [{ role: 'ai', content: buildWelcomeMessage(currentDoc.value), _isWelcome: true }]
+
+  saveConversations()
+}
+
+watch(messages, () => {
+  persistActiveMessages()
+}, { deep: true })
+
+watch(() => route.query.docId, async (newDocId) => {
+  const parsed = parseDocId(newDocId)
+  if (!parsed) return
+  if (currentDocId.value === parsed) return
+  await createNewConversation(parsed)
 })
 
 // Load document by ID
@@ -505,11 +663,12 @@ const selectDoc = async (doc) => {
   showDocPicker.value = false
   currentDoc.value = doc
   currentDocId.value = doc.id
-  persistLinkedDocId(doc.id)
-  await restoreChatForCurrentContext()
+  if (activeConversationId.value) {
+    updateConversationMeta(activeConversationId.value, { linkedDocId: doc.id, linkedDocName: doc.title })
+  }
   messages.value.push({
     role: 'ai',
-    content: `已关联文档"${doc.title}"，后续切换页面后会自动保留该关联关系与对话记录。`,
+    content: `已关联文档"${doc.title}"，进入历史对话时会自动恢复当前关联文档。`,
     _isWelcome: true
   })
   await scrollToBottom()
@@ -518,8 +677,9 @@ const selectDoc = async (doc) => {
 const unlinkDoc = () => {
   currentDoc.value = null
   currentDocId.value = null
-  persistLinkedDocId(null)
-  restoreChatForCurrentContext()
+  if (activeConversationId.value) {
+    updateConversationMeta(activeConversationId.value, { linkedDocId: null, linkedDocName: '' })
+  }
   messages.value.push({
     role: 'ai',
     content: '已取消文档关联。您可以继续自由对话，或重新选择文档。',
@@ -534,18 +694,8 @@ const downloadDoc = () => {
 
 onMounted(async () => {
   loadDocList()
-
-  const routeDocId = parseDocId(route.query.docId)
-  const persistedDocId = getPersistedLinkedDocId()
-  const initialDocId = routeDocId || persistedDocId
-
-  if (initialDocId) {
-    currentDocId.value = initialDocId
-    persistLinkedDocId(initialDocId)
-    await loadDocument(initialDocId)
-  }
-
-  await restoreChatForCurrentContext()
+  await loadSessions()
+  await scrollToBottom()
 
   // 恢复后台AI任务
   const pendingTask = getTask()
@@ -578,7 +728,7 @@ onBeforeUnmount(() => {
     _unsubscribe()
     _unsubscribe = null
   }
-  saveChatHistory()
+  persistActiveMessages()
 })
 
 const sendCommand = (text) => {
@@ -590,7 +740,11 @@ const sendMessage = async () => {
   if (!inputText.value.trim() || loading.value || isStreaming.value) return
 
   const userMsg = inputText.value.trim()
+  const isFirstUserMessage = !messages.value.some(m => m.role === 'user')
   messages.value.push({ role: 'user', content: userMsg })
+  if (isFirstUserMessage && activeConversationId.value && (activeConversation.value?.title || '新对话') === '新对话') {
+    updateConversationMeta(activeConversationId.value, { title: generateConversationTitle(userMsg) })
+  }
   inputText.value = ''
   loading.value = true
   await scrollToBottom()
@@ -640,7 +794,7 @@ const beginTypewriter = (fullText) => {
       lastAIContent.value = fullText
       _streamingTimer = null
       clearTask()
-      saveChatHistory()
+      persistActiveMessages()
       scrollToBottom()
       return
     }
@@ -757,7 +911,7 @@ const clearChat = () => {
 
   messages.value = []
   lastAIContent.value = ''
-  try { localStorage.removeItem(chatStorageKey.value) } catch (e) {}
+  persistActiveMessages()
   messages.value.push({
     role: 'ai',
     content: currentDoc.value
@@ -765,6 +919,7 @@ const clearChat = () => {
       : '对话已重置。请问有什么可以帮您？',
     _isWelcome: true
   })
+  persistActiveMessages()
 }
 
 const copyText = (text) => {
@@ -875,7 +1030,6 @@ const scrollToBottom = async () => {
 .streaming-bubble { border-color: rgba(79, 70, 229, 0.25); }
 .bubble-text :deep(.stream-cursor) { color: var(--primary); font-weight: normal; animation: cursor-blink 0.8s step-end infinite; }
 @keyframes cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-.avl-dot.active { background: var(--primary); animation: dot-blink 0.5s ease-in-out infinite; }
 .typing-dots { display: flex; gap: 4px; align-items: center; height: 20px; }
 .typing-dots span { width: 7px; height: 7px; background: var(--primary); border-radius: 50%; opacity: 0.4; animation: typingDot 1.4s infinite ease-in-out; }
 .typing-dots span:nth-child(1) { animation-delay: 0s; }
@@ -899,33 +1053,30 @@ const scrollToBottom = async () => {
 .dpi-name { display: block; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dpi-meta { font-size: 12px; color: var(--text-muted); }
 .tip-text { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+.convo-section { border-top: 1px solid var(--border-light); padding-top: 14px; }
+.convo-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.convo-search { margin-bottom: 10px; }
+.conversation-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.conversation-item { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px; border: 1px solid var(--border-light); border-radius: var(--radius-md); background: var(--bg-base); cursor: pointer; transition: all 0.2s; }
+.conversation-item:hover { border-color: var(--primary); background: rgba(79, 70, 229, 0.06); }
+.conversation-item.active { border-color: var(--primary); background: rgba(79, 70, 229, 0.1); }
+.conversation-main { min-width: 0; flex: 1; }
+.conversation-title { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-primary); font-weight: 600; }
+.conversation-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin-mark { color: #f59e0b; }
+.conversation-meta { margin-top: 4px; display: flex; gap: 8px; font-size: 11px; color: var(--text-muted); }
+.meta-time { flex-shrink: 0; }
+.meta-doc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-actions { display: flex; align-items: center; gap: 2px; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+.conversation-item:hover .conversation-actions,
+.conversation-item.active .conversation-actions { opacity: 1; pointer-events: auto; }
+.convo-action-btn { width: 24px; height: 24px; border: 1px solid var(--border-light); border-radius: 6px; background: var(--bg-card); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.convo-action-btn:hover { color: var(--primary); border-color: var(--primary); }
+.convo-action-btn.pinned { color: #f59e0b; border-color: rgba(245, 158, 11, 0.6); background: rgba(245, 158, 11, 0.08); }
+.convo-action-btn.pinned:hover { color: #d97706; border-color: #d97706; }
+.convo-action-btn.delete:hover { color: #ef4444; border-color: #ef4444; }
 
-/* Sidebar AI Visual Effects */
-.sidebar-ai-visual { margin-top: auto; padding: 16px 0 8px 0; border-top: 1px solid var(--border-light); }
-.ai-visual-canvas { position: relative; display: flex; align-items: center; justify-content: center; height: 130px; overflow: hidden; }
-.neural-svg { width: 100%; height: 100%; }
-.nn-line { stroke: var(--primary); stroke-width: 0.8; opacity: 0.15; }
-.nn-l1 { animation: nn-pulse 3s ease-in-out infinite; }
-.nn-l2 { animation: nn-pulse 3s ease-in-out 0.3s infinite; }
-.nn-l3 { animation: nn-pulse 3s ease-in-out 0.6s infinite; }
-.nn-l4 { animation: nn-pulse 3s ease-in-out 0.9s infinite; }
-.nn-l5 { animation: nn-pulse 3s ease-in-out 1.2s infinite; }
-.nn-l6 { animation: nn-pulse 3s ease-in-out 0.15s infinite; }
-.nn-l7 { animation: nn-pulse 3s ease-in-out 1.5s infinite; }
-.nn-l8 { animation: nn-pulse 3s ease-in-out 1.8s infinite; }
-.nn-l9 { animation: nn-pulse 3s ease-in-out 2.1s infinite; }
-.nn-l10 { animation: nn-pulse 3s ease-in-out 2.4s infinite; }
-@keyframes nn-pulse { 0%, 100% { opacity: 0.1; stroke-width: 0.8; } 50% { opacity: 0.5; stroke-width: 1.5; } }
-.nn-node { fill: var(--primary); opacity: 0.4; }
-.nn-input { animation: nn-node-glow 4s ease-in-out infinite; }
-.nn-hidden { animation: nn-node-glow 4s ease-in-out 1s infinite; }
-.nn-output { animation: nn-node-glow 4s ease-in-out 2s infinite; }
-@keyframes nn-node-glow { 0%, 100% { opacity: 0.3; r: 5; } 50% { opacity: 0.8; r: 7; } }
-.ai-pulse-ring { position: absolute; width: 40px; height: 40px; border: 2px solid var(--primary); border-radius: 50%; opacity: 0; animation: pulse-ring 4s ease-out infinite; top: 50%; left: 50%; transform: translate(-50%, -50%); }
-@keyframes pulse-ring { 0% { opacity: 0.3; transform: translate(-50%, -50%) scale(0.5); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.5); } }
-.ai-visual-label { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0 0 0; }
-.avl-en { font-size: 11px; color: var(--text-muted); letter-spacing: 0.05em; font-weight: 500; }
-.avl-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: dot-blink 2s ease-in-out infinite; }
-@keyframes dot-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-.avl-status { font-size: 11px; color: #22c55e; font-weight: 500; }
+@media (max-width: 1024px) {
+  .conversation-list { max-height: 220px; }
+}
 </style>
