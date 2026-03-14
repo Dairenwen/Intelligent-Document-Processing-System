@@ -9,13 +9,25 @@
         <processorPath useClasspath="false">
           <entry name="$PROJECT_DIR$/../apache-maven-3.9.12/mvn_resp/org/projectlombok/lombok/1.18.42/lombok-1.18.42.jar" />
         </processorPath>
-        <module name="docai" />
+        <module name="File-Service" />
+        <module name="Gateway-Sercive" />
+        <module name="AI-Service" />
+        <module name="User-Servive" />
+        <module name="Comm-Service" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel target="21" />
+    <bytecodeTargetLevel target="21">
+      <module name="Mcp-Service" target="17" />
+    </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="AI-Service" options="-parameters" />
+      <module name="Comm-Service" options="-parameters" />
+      <module name="File-Service" options="-parameters" />
+      <module name="Gateway-Sercive" options="-parameters" />
+      <module name="Mcp-Service" options="-parameters" />
+      <module name="User-Servive" options="-parameters" />
       <module name="docai" options="-parameters" />
     </option>
   </component>

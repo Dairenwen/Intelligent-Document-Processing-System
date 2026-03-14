@@ -19,6 +19,13 @@ spring:
     multipart:
       max-file-size: 100MB
       max-request-size: 200MB
+  ai:
+    dashscope:
+      api-key: sk-c02ef573727b4c049549c01bf7d523b2
+      chat:
+        options:
+          model: qwen-plus #可以选择qwen-max
+          temperature: 0.3 #输出随机性
 
 mybatis-plus:
   mapper-locations: classpath:/mapper/*.xml
@@ -29,13 +36,6 @@ mybatis-plus:
 file:
   upload-dir: ./uploads/
 
-# 智谱AI配置
-ai:
-  api-key: 1047a488a6f54456a1a4323d8b016259.cZ3e2WfA3VVqkpqJ
-  model: glm-4-flash
-  max-retries: 3
-  file-parser:
-    enabled: true  # 启用智谱AI文件解析API（false时回退到本地Apache POI解析）
 
 # 日志级别
 logging:
